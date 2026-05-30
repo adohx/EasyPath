@@ -145,7 +145,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           final selected = _tab == i;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _tab = i),
+              onTap: () {
+                setState(() => _tab = i);
+                _tts.speakInterrupt(tabs[i]);
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(

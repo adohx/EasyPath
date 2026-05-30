@@ -136,7 +136,20 @@ class ApiService {
               toName: 'Ouellette Ave at Elliott St',
               durationSeconds: 1200,
               distanceMeters: 2100,
-              steps: [],
+              steps: [
+                const NavigationStep(
+                  instruction: 'Board Route 1A bus towards Downtown at Ouellette Ave / Wyandotte St',
+                  distanceMeters: 0,
+                ),
+                const NavigationStep(
+                  instruction: 'Ride approximately 2.1 kilometres to Ouellette Ave / Elliott St',
+                  distanceMeters: 2100,
+                ),
+                const NavigationStep(
+                  instruction: 'Alight here — this is your stop at Ouellette Ave / Elliott St',
+                  distanceMeters: 0,
+                ),
+              ],
               transitInfo: {'route': '1A', 'headsign': 'Downtown'},
             ),
             JourneyLeg(

@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <application
-        android:label="无障碍出行助手"
+        android:label="Accessibility Navigator"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

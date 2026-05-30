@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import '../models/place.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
+import '../services/voice_service.dart';
 import '../widgets/large_button.dart';
 import 'route_selection_screen.dart';
 import 'exploration_screen.dart';
@@ -18,11 +18,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final _controller = TextEditingController();
   final _tts = TtsService.instance;
   final _api = ApiService.instance;
-  final _speech = SpeechToText();
+  final _voice = VoiceService.instance;
 
   List<Place> _results = [];
   bool _loading = false;
-  bool _speechAvailable = false;
   bool _listening = false;
   Place? _selectedOrigin;
 
@@ -38,17 +37,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _selectedOrigin = _defaultOrigin;
-    _initSpeech();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _tts.speak(
-          'Welcome to the Accessibility Navigation Assistant. Enter a destination or hold the microphone button to speak.');
+          'Welcome to the Accessibility Navigation Assistant. Enter a destination or tap the microphone button to speak.');
     });
   }
 
-  Future<void> _initSpeech() async {
-    final available = await _speech.initialize();
-    setState(() => _speechAvailable = available);
-  }
 
   Future<void> _search(String query) async {
     if (query.trim().isEmpty) return;
@@ -70,27 +64,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startListening() async {
-    if (!_speechAvailable) {
-      _tts.speak('Speech recognition is unavailable. Please check microphone permissions.');
-      return;
-    }
-    await _tts.stop();
     setState(() => _listening = true);
-    await _speech.listen(
-      onResult: (result) {
-        if (result.finalResult) {
-          _controller.text = result.recognizedWords;
-          setState(() => _listening = false);
-          _search(result.recognizedWords);
-        }
-      },
-      listenOptions: SpeechListenOptions(localeId: 'en_CA'),
-    );
-  }
-
-  void _stopListening() async {
-    await _speech.stop();
+    final text = await _voice.listen();
     setState(() => _listening = false);
+    if (text.isEmpty) return;
+    _controller.text = text;
+    _search(text);
   }
 
   void _selectDestination(Place dest) {
@@ -116,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    _speech.cancel();
     super.dispose();
   }
 
@@ -217,19 +195,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
           Semantics(
-            label: _listening ? 'Listening — release to stop' : 'Hold to speak',
+            label: _listening ? 'Stop listening' : 'Tap to speak',
             button: true,
-            child: GestureDetector(
-              onLongPressStart: (_) => _startListening(),
-              onLongPressEnd: (_) => _stopListening(),
-              child: Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: _listening
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: ElevatedButton(
+                onPressed: _listening ? null : _startListening,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _listening
                       ? Colors.red[600]
                       : const Color(0xFF1565C0),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: EdgeInsets.zero,
                 ),
                 child: Icon(
                   _listening ? Icons.mic : Icons.mic_none,
@@ -266,8 +246,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildResults() {
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    final count = _results.length;
+    final statusText =
+        '$count location${count == 1 ? '' : 's'} found. Please select your destination.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: statusText,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              statusText,
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: _results.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
@@ -333,6 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+          ),
+        ),
+      ],
     );
   }
 
