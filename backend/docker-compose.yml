@@ -1,0 +1,37 @@
+
+
+services:
+  fastapi:
+    build: ./fastapi
+    container_name: ana-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./fastapi/app:/app
+    environment:
+      - MOTIS_URL=http://motis:8080
+      - OVERPASS_URL=http://overpass:8080/api/interpreter
+    restart: unless-stopped
+
+  # Phase 2: uncomment to enable MOTIS
+  # motis:
+  #   image: ghcr.io/motis-project/motis:latest
+  #   container_name: ana-motis
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./motis/data:/data
+  #   restart: unless-stopped
+
+  # Optional: local Overpass instance (Phase 2+)
+  # overpass:
+  #   image: wiktorn/overpass-api
+  #   container_name: ana-overpass
+  #   ports:
+  #     - "8090:80"
+  #   volumes:
+  #     - ./overpass/data:/db
+  #   environment:
+  #     - OVERPASS_MODE=clone
+  #     - OVERPASS_META=yes
+  #   restart: unless-stopped
