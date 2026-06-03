@@ -31,6 +31,8 @@ class ApiService {
     required double originLon,
     required double destLat,
     required double destLon,
+    String originName = 'Current Location',
+    String destinationName = 'Destination',
   }) async {
     try {
       final uri = Uri.parse('$kBackendBase/api/routes/plan');
@@ -41,6 +43,8 @@ class ApiService {
             body: jsonEncode({
               'origin': {'lat': originLat, 'lon': originLon},
               'destination': {'lat': destLat, 'lon': destLon},
+              'origin_name': originName,
+              'destination_name': destinationName,
             }),
           )
           .timeout(const Duration(seconds: 8));

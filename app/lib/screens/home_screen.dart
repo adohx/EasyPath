@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import '../models/place.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../services/voice_service.dart';
+import '../services/accessibility_focus_service.dart';
+import '../services/location_service.dart';
 import '../widgets/large_button.dart';
 import 'route_selection_screen.dart';
 import 'exploration_screen.dart';
@@ -19,30 +22,30 @@ class _HomeScreenState extends State<HomeScreen> {
   final _tts = TtsService.instance;
   final _api = ApiService.instance;
   final _voice = VoiceService.instance;
+  final _location = LocationService.instance;
+  final _resultsStatusKey = GlobalKey();
 
   List<Place> _results = [];
   bool _loading = false;
   bool _listening = false;
+  bool _locating = true;
   Place? _selectedOrigin;
-
-  static const Place _defaultOrigin = Place(
-    id: 'origin_default',
-    name: 'Current Location (Simulated)',
-    address: 'Ouellette Ave & Wyandotte St, Windsor, ON',
-    lat: 42.3150,
-    lon: -83.0360,
-  );
 
   @override
   void initState() {
     super.initState();
-    _selectedOrigin = _defaultOrigin;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _tts.speak(
-          'Welcome to the Accessibility Navigation Assistant. Enter a destination or tap the microphone button to speak.');
+          'Welcome to the Accessibility Navigation Assistant. Acquiring your location. Enter a destination or tap the microphone button to speak.');
+      final place = await _location.getCurrentPlace();
+      if (mounted) {
+        setState(() {
+          _selectedOrigin = place;
+          _locating = false;
+        });
+      }
     });
   }
-
 
   Future<void> _search(String query) async {
     if (query.trim().isEmpty) return;
@@ -60,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _tts.speak(
           '${results.length} location${results.length == 1 ? '' : 's'} found. Please select your destination.');
+      AccessibilityFocusService.focusWidget(_resultsStatusKey);
     }
   }
 
@@ -73,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectDestination(Place dest) {
+    if (_selectedOrigin == null) return;
     _tts.speak('Destination: ${dest.name}. Planning route, please wait.');
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -107,17 +112,22 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.explore),
-            tooltip: 'Explore nearby',
-            onPressed: () => _openExploration(_selectedOrigin!),
+          // ExcludeSemantics: TalkBack skips this button so it doesn't grab
+          // initial focus. TalkBack users use "Explore Current Location" in
+          // the hint body, which is always reachable.
+          ExcludeSemantics(
+            child: IconButton(
+              icon: const Icon(Icons.explore),
+              tooltip: 'Explore nearby',
+              onPressed: _selectedOrigin == null ? null : () => _openExploration(_selectedOrigin!),
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
-          _buildOriginBar(),
           _buildSearchBar(),
+          _buildOriginBar(),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(24),
@@ -138,11 +148,20 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          const Icon(Icons.my_location, color: Color(0xFF1565C0), size: 20),
+          if (_locating)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(Icons.my_location, color: Color(0xFF1565C0), size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'From: ${_selectedOrigin!.name}',
+              _locating
+                  ? 'Acquiring location…'
+                  : 'From: ${_selectedOrigin?.name ?? "Unknown"}',
               style: const TextStyle(fontSize: 15, color: Color(0xFF1565C0)),
             ),
           ),
@@ -160,6 +179,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Semantics(
               label: 'Destination input field',
               textField: true,
+              // sortKey(2): TalkBack reaches text field after mic button
+              sortKey: const OrdinalSortKey(2),
               child: TextField(
                 controller: _controller,
                 style: const TextStyle(fontSize: 18),
@@ -194,7 +215,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(width: 8),
+          // sortKey(1): TalkBack reaches mic button first among search bar elements
           Semantics(
+            sortKey: const OrdinalSortKey(1),
             label: _listening ? 'Stop listening' : 'Tap to speak',
             button: true,
             child: SizedBox(
@@ -221,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
           Semantics(
+            sortKey: const OrdinalSortKey(3),
             label: 'Search',
             button: true,
             child: SizedBox(
@@ -252,7 +276,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // liveRegion: TalkBack automatically announces this text when it changes
         Semantics(
+          key: _resultsStatusKey,
           liveRegion: true,
           label: statusText,
           child: Padding(
@@ -266,71 +292,71 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: _results.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, i) {
-        final place = _results[i];
-        return Semantics(
-          label: '${place.name}, ${place.address}',
-          button: true,
-          child: Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _selectDestination(place),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      place.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF0D1B2A),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      place.address,
-                      style:
-                          TextStyle(fontSize: 14, color: Colors.grey[700]),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.explore, size: 20),
-                            label: const Text('Explore Nearby'),
-                            onPressed: () => _openExploration(place),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.directions, size: 20),
-                            label: const Text('Get Directions'),
-                            onPressed: () => _selectDestination(place),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1565C0),
-                              foregroundColor: Colors.white,
+            itemCount: _results.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, i) {
+              final place = _results[i];
+              return Semantics(
+                label: '${place.name}, ${place.address}',
+                button: true,
+                child: Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _selectDestination(place),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            place.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0D1B2A),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          Text(
+                            place.address,
+                            style:
+                                TextStyle(fontSize: 14, color: Colors.grey[700]),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.explore, size: 20),
+                                  label: const Text('Explore Nearby'),
+                                  onPressed: () => _openExploration(place),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.directions, size: 20),
+                                  label: const Text('Get Directions'),
+                                  onPressed: () => _selectDestination(place),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1565C0),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ),
-        );
-      },
+              );
+            },
           ),
         ),
       ],
@@ -355,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
             LargeButton(
               label: 'Explore Current Location',
               icon: Icons.explore,
-              onPressed: () => _openExploration(_selectedOrigin!),
+              onPressed: _selectedOrigin == null ? null : () => _openExploration(_selectedOrigin!),
               backgroundColor: Colors.teal[700],
             ),
           ],

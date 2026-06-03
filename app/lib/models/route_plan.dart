@@ -134,6 +134,8 @@ class RoutePlan {
   final List<FunctionalPoint> functionalPoints;
   final List<RiskPoint> riskPoints;
   final AccessibilitySummary accessibilitySummary;
+  // [[lat, lon], ...] polyline from OSRM/MOTIS; empty for mock routes
+  final List<List<double>> geometry;
 
   const RoutePlan({
     required this.id,
@@ -145,9 +147,11 @@ class RoutePlan {
     required this.functionalPoints,
     required this.riskPoints,
     required this.accessibilitySummary,
+    this.geometry = const [],
   });
 
   factory RoutePlan.fromJson(Map<String, dynamic> json) {
+    final rawGeometry = json['geometry'] as List<dynamic>? ?? [];
     return RoutePlan(
       id: json['id'] as String,
       mode: json['mode'] as String,
@@ -166,6 +170,9 @@ class RoutePlan {
           .toList(),
       accessibilitySummary: AccessibilitySummary.fromJson(
           json['accessibility_summary'] as Map<String, dynamic>),
+      geometry: rawGeometry
+          .map((p) => (p as List<dynamic>).map((v) => (v as num).toDouble()).toList())
+          .toList(),
     );
   }
 

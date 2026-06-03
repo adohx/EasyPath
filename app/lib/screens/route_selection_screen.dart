@@ -44,6 +44,8 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
         originLon: widget.origin.lon,
         destLat: widget.destination.lat,
         destLon: widget.destination.lon,
+        originName: widget.origin.name,
+        destinationName: widget.destination.name,
       );
       setState(() {
         _routes = routes;
@@ -69,6 +71,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       MaterialPageRoute(
         builder: (_) => RouteDetailScreen(
           route: route,
+          origin: widget.origin,
           destination: widget.destination,
         ),
       ),

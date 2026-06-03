@@ -6,14 +6,17 @@ import '../models/risk_point.dart';
 import '../services/tts_service.dart';
 import '../widgets/large_button.dart';
 import 'navigation_screen.dart';
+import 'debug_map_screen.dart';
 
 class RouteDetailScreen extends StatefulWidget {
   final RoutePlan route;
+  final Place origin;
   final Place destination;
 
   const RouteDetailScreen({
     super.key,
     required this.route,
+    required this.origin,
     required this.destination,
   });
 
@@ -50,6 +53,19 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'View on map',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => DebugMapScreen(
+                  origin: widget.origin,
+                  destination: widget.destination,
+                  route: widget.route,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.volume_up),
             tooltip: 'Read route overview',
