@@ -3,6 +3,7 @@ import '../models/place.dart';
 import '../models/route_plan.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
+import 'debug_map_screen.dart';
 import 'route_detail_screen.dart';
 
 class RouteSelectionScreen extends StatefulWidget {
@@ -20,8 +21,8 @@ class RouteSelectionScreen extends StatefulWidget {
 }
 
 class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
-  final _tts = TtsService.instance;
-  final _api = ApiService.instance;
+  final _ttsService = TtsService.instance;
+  final _apiService = ApiService.instance;
 
   List<RoutePlan> _routes = [];
   bool _loading = true;
@@ -39,7 +40,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       _error = null;
     });
     try {
-      final routes = await _api.planRoutes(
+      final routes = await _apiService.planRoutes(
         originLat: widget.origin.lat,
         originLon: widget.origin.lon,
         destLat: widget.destination.lat,
@@ -52,17 +53,19 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
         _loading = false;
       });
       if (routes.isNotEmpty) {
-        _tts.speak(
-            '${routes.length} route${routes.length == 1 ? '' : 's'} found. '
-            'The fastest option is ${routes.first.modeLabel}, approximately ${routes.first.durationLabel}. '
-            'Please select a route.');
+        _ttsService.speak(
+          '${routes.length} route${routes.length == 1 ? '' : 's'} found. '
+          'The fastest option is ${routes.first.modeLabel}, '
+          'approximately ${routes.first.durationLabel}. '
+          'Please select a route.',
+        );
       }
     } catch (e) {
       setState(() {
         _loading = false;
         _error = 'Route planning failed. Please try again.';
       });
-      _tts.speak('Route planning failed. Please try again.');
+      _ttsService.speak('Route planning failed. Please try again.');
     }
   }
 
@@ -85,17 +88,48 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
         title: const Text('Choose a Route'),
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'View on map',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => DebugMapScreen(
+                  origin: widget.origin,
+                  destination: widget.destination,
+                  routes: _routes,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
-          _buildDestinationHeader(),
-          Expanded(child: _buildBody()),
+          _DestinationHeader(destination: widget.destination),
+          Expanded(
+            child: _RouteBody(
+              loading: _loading,
+              error: _error,
+              routes: _routes,
+              onSelectRoute: _selectRoute,
+              onReadAloud: (route) => _ttsService.speak(route.overviewTts),
+              onRetry: _loadRoutes,
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildDestinationHeader() {
+class _DestinationHeader extends StatelessWidget {
+  final Place destination;
+
+  const _DestinationHeader({required this.destination});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: Colors.blue[50],
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -108,7 +142,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.destination.name,
+                  destination.name,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -116,7 +150,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                   ),
                 ),
                 Text(
-                  widget.destination.address,
+                  destination.address,
                   style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                 ),
               ],
@@ -126,34 +160,57 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       ),
     );
   }
+}
 
-  Widget _buildBody() {
-    if (_loading) {
+class _RouteBody extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final List<RoutePlan> routes;
+  final void Function(RoutePlan) onSelectRoute;
+  final void Function(RoutePlan) onReadAloud;
+  final VoidCallback onRetry;
+
+  const _RouteBody({
+    required this.loading,
+    required this.error,
+    required this.routes,
+    required this.onSelectRoute,
+    required this.onReadAloud,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null) {
+    if (error != null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_error!,
-                style: const TextStyle(fontSize: 16, color: Colors.red)),
+            Text(
+              error!,
+              style: const TextStyle(fontSize: 16, color: Colors.red),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(
-                onPressed: _loadRoutes, child: const Text('Retry')),
+              onPressed: onRetry,
+              child: const Text('Retry'),
+            ),
           ],
         ),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: _routes.length,
+      itemCount: routes.length,
       separatorBuilder: (_, _) => const SizedBox(height: 16),
-      itemBuilder: (context, i) => _RouteCard(
-        route: _routes[i],
-        index: i + 1,
-        onTap: () => _selectRoute(_routes[i]),
-        onTtsPreview: () => _tts.speak(_routes[i].overviewTts),
+      itemBuilder: (context, index) => _RouteCard(
+        route: routes[index],
+        index: index + 1,
+        onTap: () => onSelectRoute(routes[index]),
+        onTtsPreview: () => onReadAloud(routes[index]),
       ),
     );
   }
@@ -173,9 +230,9 @@ class _RouteCard extends StatelessWidget {
   });
 
   Color get _scoreColor {
-    final s = route.accessibilitySummary.score;
-    if (s >= 80) return Colors.green[700]!;
-    if (s >= 60) return Colors.orange[700]!;
+    final score = route.accessibilitySummary.score;
+    if (score >= 80) return Colors.green[700]!;
+    if (score >= 60) return Colors.orange[700]!;
     return Colors.red[700]!;
   }
 
@@ -188,8 +245,9 @@ class _RouteCard extends StatelessWidget {
       button: true,
       child: Card(
         elevation: 3,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
@@ -202,7 +260,9 @@ class _RouteCard extends StatelessWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1565C0),
                         borderRadius: BorderRadius.circular(8),
@@ -210,20 +270,25 @@ class _RouteCard extends StatelessWidget {
                       child: Text(
                         'Option $index',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Text(
                       route.modeLabel,
                       style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: _scoreColor,
                         borderRadius: BorderRadius.circular(8),
@@ -231,8 +296,9 @@ class _RouteCard extends StatelessWidget {
                       child: Text(
                         'A11y ${summary.score}',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -247,7 +313,9 @@ class _RouteCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 _InfoRow(
                   Icons.transfer_within_a_station,
-                  '${summary.transferCount} transfer${summary.transferCount == 1 ? '' : 's'}  ·  ${summary.streetCrossings} crossing${summary.streetCrossings == 1 ? '' : 's'}',
+                  '${summary.transferCount} transfer${summary.transferCount == 1 ? '' : 's'}'
+                  '  ·  '
+                  '${summary.streetCrossings} crossing${summary.streetCrossings == 1 ? '' : 's'}',
                 ),
                 if (route.riskPoints.isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -299,12 +367,12 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Colors.grey[700]!;
+    final textColor = color ?? Colors.grey[700]!;
     return Row(
       children: [
-        Icon(icon, size: 18, color: c),
+        Icon(icon, size: 18, color: textColor),
         const SizedBox(width: 6),
-        Text(text, style: TextStyle(fontSize: 15, color: c)),
+        Text(text, style: TextStyle(fontSize: 15, color: textColor)),
       ],
     );
   }

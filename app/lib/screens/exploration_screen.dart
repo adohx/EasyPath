@@ -3,6 +3,7 @@ import '../models/place.dart';
 import '../models/exploration_item.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
+import 'debug_map_screen.dart';
 
 class ExplorationScreen extends StatefulWidget {
   final Place centerPlace;
@@ -14,8 +15,8 @@ class ExplorationScreen extends StatefulWidget {
 }
 
 class _ExplorationScreenState extends State<ExplorationScreen> {
-  final _tts = TtsService.instance;
-  final _api = ApiService.instance;
+  final _ttsService = TtsService.instance;
+  final _apiService = ApiService.instance;
 
   List<ExplorationCategory> _categories = [];
   bool _loading = true;
@@ -30,20 +31,22 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
 
   Future<void> _loadExploration() async {
     setState(() => _loading = true);
-    final cats = await _api.nearbyExploration(
+    final categories = await _apiService.nearbyExploration(
       lat: widget.centerPlace.lat,
       lon: widget.centerPlace.lon,
     );
     setState(() {
-      _categories = cats;
+      _categories = categories;
       _loading = false;
       _selectedCategoryIndex = 0;
       _currentItemIndex = 0;
     });
-    if (cats.isNotEmpty) {
-      final catNames = cats.map((c) => c.label).join(', ');
-      _tts.speak(
-          '${cats.length} categories nearby: $catNames. Select a category to explore.');
+    if (categories.isNotEmpty) {
+      final categoryNames = categories.map((c) => c.label).join(', ');
+      _ttsService.speak(
+        '${categories.length} categories nearby: $categoryNames. '
+        'Select a category to explore.',
+      );
     }
   }
 
@@ -62,46 +65,54 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
       _selectedCategoryIndex = index;
       _currentItemIndex = 0;
     });
-    final cat = _categories[index];
-    _tts.speakInterrupt(
-        '${cat.label}, ${cat.items.length} location${cat.items.length == 1 ? '' : 's'}. '
-        '${cat.items.isNotEmpty ? cat.items.first.ttsText : ''}');
+    final category = _categories[index];
+    final count = category.items.length;
+    _ttsService.speakInterrupt(
+      '${category.label}, $count location${count == 1 ? '' : 's'}. '
+      '${category.items.isNotEmpty ? category.items.first.ttsText : ''}',
+    );
+  }
+
+  void _selectItem(int index) {
+    setState(() => _currentItemIndex = index);
+    _ttsService.speakInterrupt(_currentItems[index].ttsText);
   }
 
   void _playPrev() {
     if (_currentItemIndex > 0) {
       setState(() => _currentItemIndex--);
-      _tts.speakInterrupt(_currentItem!.ttsText);
+      _ttsService.speakInterrupt(_currentItem!.ttsText);
     } else {
-      _tts.speakInterrupt('This is the first location.');
+      _ttsService.speakInterrupt('This is the first location.');
     }
   }
 
   void _playNext() {
     if (_currentItemIndex < _currentItems.length - 1) {
       setState(() => _currentItemIndex++);
-      _tts.speakInterrupt(_currentItem!.ttsText);
+      _ttsService.speakInterrupt(_currentItem!.ttsText);
     } else {
-      _tts.speakInterrupt('This is the last location.');
+      _ttsService.speakInterrupt('This is the last location.');
     }
   }
 
   void _repeatCurrent() {
     if (_currentItem != null) {
-      _tts.speakInterrupt(_currentItem!.ttsText);
+      _ttsService.speakInterrupt(_currentItem!.ttsText);
     }
   }
 
   void _playAll() {
     if (_currentItems.isEmpty) return;
-    final text = _currentItems.map((i) => i.ttsText).join('. Next: ');
-    _tts.speakInterrupt(
-        'All ${_categories[_selectedCategoryIndex].label}: $text.');
+    final text = _currentItems.map((item) => item.ttsText).join('. Next: ');
+    _ttsService.speakInterrupt(
+      'All ${_categories[_selectedCategoryIndex].label}: $text.',
+    );
   }
 
   @override
   void dispose() {
-    _tts.stop();
+    _ttsService.stop();
     super.dispose();
   }
 
@@ -112,30 +123,91 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
         title: Text('Explore · ${widget.centerPlace.name}'),
         backgroundColor: Colors.teal[700],
         foregroundColor: Colors.white,
+        actions: [
+          if (!_loading && _currentItems.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              tooltip: 'View category on map',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DebugMapScreen(
+                    origin: widget.centerPlace,
+                    extraPlaces: _currentItems
+                        .map(
+                          (item) => Place(
+                            id: item.id,
+                            name: item.name,
+                            address: item.distanceLabel,
+                            lat: item.lat,
+                            lon: item.lon,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-              ? _buildEmpty()
+              ? const _EmptyExplorationView()
               : Column(
                   children: [
-                    _buildCategoryChips(),
+                    _ExplorationCategoryChips(
+                      categories: _categories,
+                      selectedIndex: _selectedCategoryIndex,
+                      onSelect: _selectCategory,
+                    ),
                     const Divider(height: 1),
-                    Expanded(child: _buildItemList()),
-                    if (_currentItems.isNotEmpty) _buildPlayerControls(),
+                    Expanded(
+                      child: _ExplorationItemList(
+                        items: _currentItems,
+                        selectedIndex: _currentItemIndex,
+                        onSelectItem: _selectItem,
+                      ),
+                    ),
+                    if (_currentItems.isNotEmpty)
+                      _ExplorationPlayerControls(
+                        currentIndex: _currentItemIndex,
+                        totalItems: _currentItems.length,
+                        onPrevious: _playPrev,
+                        onRepeat: _repeatCurrent,
+                        onNext: _playNext,
+                        onReadAll: _playAll,
+                      ),
                   ],
                 ),
     );
   }
+}
 
-  Widget _buildEmpty() {
-    return const Center(
-      child: Text('No nearby exploration data available.',
-          style: TextStyle(fontSize: 16)),
-    );
-  }
+class _EmptyExplorationView extends StatelessWidget {
+  const _EmptyExplorationView();
 
-  Widget _buildCategoryChips() {
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Text(
+          'No nearby exploration data available.',
+          style: TextStyle(fontSize: 16),
+        ),
+      );
+}
+
+class _ExplorationCategoryChips extends StatelessWidget {
+  final List<ExplorationCategory> categories;
+  final int selectedIndex;
+  final void Function(int) onSelect;
+
+  const _ExplorationCategoryChips({
+    required this.categories,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: Colors.teal[50],
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -143,27 +215,27 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
         height: 44,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: _categories.length,
+          itemCount: categories.length,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (context, i) {
-            final cat = _categories[i];
-            final selected = i == _selectedCategoryIndex;
+          itemBuilder: (context, index) {
+            final category = categories[index];
+            final selected = index == selectedIndex;
             return Semantics(
-              label: '${cat.label}, ${cat.items.length} locations',
+              label:
+                  '${category.label}, ${category.items.length} locations',
               selected: selected,
               button: true,
               child: ChoiceChip(
                 label: Text(
-                  '${cat.label} (${cat.items.length})',
+                  '${category.label} (${category.items.length})',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color:
-                        selected ? Colors.white : Colors.teal[800],
+                    color: selected ? Colors.white : Colors.teal[800],
                   ),
                 ),
                 selected: selected,
                 selectedColor: Colors.teal[700],
-                onSelected: (_) => _selectCategory(i),
+                onSelected: (_) => onSelect(index),
               ),
             );
           },
@@ -171,20 +243,33 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
       ),
     );
   }
+}
 
-  Widget _buildItemList() {
-    final items = _currentItems;
+class _ExplorationItemList extends StatelessWidget {
+  final List<ExplorationItem> items;
+  final int selectedIndex;
+  final void Function(int) onSelectItem;
+
+  const _ExplorationItemList({
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelectItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     if (items.isEmpty) {
       return const Center(
-          child: Text('No locations in this category.'));
+        child: Text('No locations in this category.'),
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: items.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final item = items[i];
-        final isSelected = i == _currentItemIndex;
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final isSelected = index == selectedIndex;
         return Semantics(
           label: item.ttsText,
           selected: isSelected,
@@ -199,18 +284,17 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
                   : BorderSide.none,
             ),
             child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
               leading: CircleAvatar(
-                backgroundColor: isSelected
-                    ? Colors.teal[700]
-                    : Colors.teal[100],
+                backgroundColor:
+                    isSelected ? Colors.teal[700] : Colors.teal[100],
                 child: Text(
-                  '${i + 1}',
+                  '${index + 1}',
                   style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : Colors.teal[800],
+                    color: isSelected ? Colors.white : Colors.teal[800],
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -218,35 +302,48 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
               title: Text(
                 item.name,
                 style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               subtitle: Text(
                 '${item.distanceLabel}  ·  ${item.bearingLabel}',
-                style:
-                    TextStyle(fontSize: 14, color: Colors.grey[600]),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.volume_up),
-                onPressed: () {
-                  setState(() => _currentItemIndex = i);
-                  _tts.speakInterrupt(item.ttsText);
-                },
+                onPressed: () => onSelectItem(index),
               ),
-              onTap: () {
-                setState(() => _currentItemIndex = i);
-                _tts.speakInterrupt(item.ttsText);
-              },
+              onTap: () => onSelectItem(index),
             ),
           ),
         );
       },
     );
   }
+}
 
-  Widget _buildPlayerControls() {
-    final items = _currentItems;
-    final isFirst = _currentItemIndex == 0;
-    final isLast = _currentItemIndex == items.length - 1;
+class _ExplorationPlayerControls extends StatelessWidget {
+  final int currentIndex;
+  final int totalItems;
+  final VoidCallback onPrevious;
+  final VoidCallback onRepeat;
+  final VoidCallback onNext;
+  final VoidCallback onReadAll;
+
+  const _ExplorationPlayerControls({
+    required this.currentIndex,
+    required this.totalItems,
+    required this.onPrevious,
+    required this.onRepeat,
+    required this.onNext,
+    required this.onReadAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isFirst = currentIndex == 0;
+    final isLast = currentIndex == totalItems - 1;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
@@ -254,13 +351,15 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+          ),
         ],
       ),
       child: Column(
         children: [
           Text(
-            '${_currentItemIndex + 1} / ${items.length}',
+            '${currentIndex + 1} / $totalItems',
             style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
           const SizedBox(height: 8),
@@ -273,12 +372,15 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
                   child: SizedBox(
                     height: 60,
                     child: ElevatedButton.icon(
-                      onPressed: isFirst ? null : _playPrev,
+                      onPressed: isFirst ? null : onPrevious,
                       icon: const Icon(Icons.arrow_back, size: 22),
-                      label: const Text('Previous',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Previous',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal[600],
                         foregroundColor: Colors.white,
@@ -299,12 +401,15 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
                   child: SizedBox(
                     height: 60,
                     child: ElevatedButton.icon(
-                      onPressed: _repeatCurrent,
+                      onPressed: onRepeat,
                       icon: const Icon(Icons.volume_up, size: 22),
-                      label: const Text('Repeat',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Repeat',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal[800],
                         foregroundColor: Colors.white,
@@ -324,12 +429,15 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
                   child: SizedBox(
                     height: 60,
                     child: ElevatedButton.icon(
-                      onPressed: isLast ? null : _playNext,
+                      onPressed: isLast ? null : onNext,
                       icon: const Icon(Icons.arrow_forward, size: 22),
-                      label: const Text('Next',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Next',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal[600],
                         foregroundColor: Colors.white,
@@ -350,10 +458,11 @@ class _ExplorationScreenState extends State<ExplorationScreen> {
             height: 48,
             child: OutlinedButton.icon(
               icon: const Icon(Icons.playlist_play, size: 22),
-              label: const Text('Read All Locations',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.bold)),
-              onPressed: _playAll,
+              label: const Text(
+                'Read All Locations',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              onPressed: onReadAll,
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.teal[800],
                 side: BorderSide(color: Colors.teal[700]!),

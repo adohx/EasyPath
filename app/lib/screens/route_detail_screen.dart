@@ -8,6 +8,8 @@ import '../widgets/large_button.dart';
 import 'navigation_screen.dart';
 import 'debug_map_screen.dart';
 
+enum _RouteTab { overview, keyPoints, riskPoints }
+
 class RouteDetailScreen extends StatefulWidget {
   final RoutePlan route;
   final Place origin;
@@ -25,19 +27,19 @@ class RouteDetailScreen extends StatefulWidget {
 }
 
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
-  final _tts = TtsService.instance;
-  int _tab = 0; // 0=Overview 1=Functional Points 2=Risk Points
+  final _ttsService = TtsService.instance;
+  _RouteTab _tab = _RouteTab.overview;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tts.speak(widget.route.overviewTts);
+      _ttsService.speak(widget.route.overviewTts);
     });
   }
 
   void _startNavigation() {
-    _tts.stop();
+    _ttsService.stop();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NavigationScreen(route: widget.route),
@@ -61,7 +63,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 builder: (_) => DebugMapScreen(
                   origin: widget.origin,
                   destination: widget.destination,
-                  route: widget.route,
+                  routes: [widget.route],
                 ),
               ),
             ),
@@ -69,31 +71,75 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           IconButton(
             icon: const Icon(Icons.volume_up),
             tooltip: 'Read route overview',
-            onPressed: () => _tts.speak(widget.route.overviewTts),
+            onPressed: () => _ttsService.speak(widget.route.overviewTts),
           ),
         ],
       ),
       body: Column(
         children: [
-          _buildScoreBar(),
-          _buildTabBar(),
-          Expanded(child: _buildTabContent()),
-          _buildBottomBar(),
+          _AccessibilityScoreBar(
+            route: widget.route,
+            onReadAloud: (text) => _ttsService.speak(text),
+          ),
+          _RouteTabBar(
+            selectedTab: _tab,
+            route: widget.route,
+            onTabChanged: (tab) {
+              setState(() => _tab = tab);
+              _ttsService.speakInterrupt(_tabLabel(tab));
+            },
+          ),
+          Expanded(
+            child: _RouteTabContent(
+              selectedTab: _tab,
+              route: widget.route,
+              onReadAloud: (text) => _ttsService.speak(text),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            child: LargeButton(
+              label: 'Start Simulated Navigation',
+              icon: Icons.navigation,
+              onPressed: _startNavigation,
+              semanticLabel:
+                  'Start step-by-step simulated navigation. '
+                  'You can step through each instruction.',
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildScoreBar() {
-    final s = widget.route.accessibilitySummary;
-    final color = s.score >= 80
+  String _tabLabel(_RouteTab tab) => switch (tab) {
+        _RouteTab.overview => 'Overview',
+        _RouteTab.keyPoints =>
+          'Key Points (${widget.route.functionalPoints.length})',
+        _RouteTab.riskPoints =>
+          'Risk Points (${widget.route.riskPoints.length})',
+      };
+}
+
+class _AccessibilityScoreBar extends StatelessWidget {
+  final RoutePlan route;
+  final void Function(String) onReadAloud;
+
+  const _AccessibilityScoreBar({
+    required this.route,
+    required this.onReadAloud,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = route.accessibilitySummary;
+    final color = summary.score >= 80
         ? Colors.green[700]!
-        : s.score >= 60
+        : summary.score >= 60
             ? Colors.orange[700]!
             : Colors.red[700]!;
     return Semantics(
-      label:
-          'Accessibility score ${s.score}. ${s.ttsDescription}',
+      label: 'Accessibility score ${summary.score}. ${summary.ttsDescription}',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: color.withValues(alpha: 0.1),
@@ -102,11 +148,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             Container(
               width: 56,
               height: 56,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               child: Center(
                 child: Text(
-                  '${s.score}',
+                  '${summary.score}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -120,19 +165,26 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Accessibility Score',
-                      style:
-                          TextStyle(fontSize: 13, color: Colors.black54)),
+                  const Text(
+                    'Accessibility Score',
+                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
                   const SizedBox(height: 2),
                   Text(
-                    '${s.streetCrossings} crossing${s.streetCrossings == 1 ? '' : 's'}  ·  ${(s.walkingDistanceMeters / 1000).toStringAsFixed(1)} km walk  ·  ${s.transferCount} transfer${s.transferCount == 1 ? '' : 's'}',
+                    '${summary.streetCrossings} crossing${summary.streetCrossings == 1 ? '' : 's'}'
+                    '  ·  '
+                    '${(summary.walkingDistanceMeters / 1000).toStringAsFixed(1)} km walk'
+                    '  ·  '
+                    '${summary.transferCount} transfer${summary.transferCount == 1 ? '' : 's'}',
                     style: const TextStyle(fontSize: 14),
                   ),
-                  if (s.audibleSignals > 0)
+                  if (summary.audibleSignals > 0)
                     Text(
-                      '${s.audibleSignals} audible signal${s.audibleSignals == 1 ? '' : 's'}',
+                      '${summary.audibleSignals} audible signal${summary.audibleSignals == 1 ? '' : 's'}',
                       style: TextStyle(
-                          fontSize: 13, color: Colors.green[700]),
+                        fontSize: 13,
+                        color: Colors.green[700],
+                      ),
                     ),
                 ],
               ),
@@ -140,31 +192,45 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             IconButton(
               icon: const Icon(Icons.volume_up),
               tooltip: 'Read accessibility details',
-              onPressed: () => _tts.speak(s.ttsDescription),
+              onPressed: () => onReadAloud(summary.ttsDescription),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildTabBar() {
-    final tabs = [
-      'Overview',
-      'Key Points (${widget.route.functionalPoints.length})',
-      'Risk Points (${widget.route.riskPoints.length})',
-    ];
+class _RouteTabBar extends StatelessWidget {
+  final _RouteTab selectedTab;
+  final RoutePlan route;
+  final void Function(_RouteTab) onTabChanged;
+
+  const _RouteTabBar({
+    required this.selectedTab,
+    required this.route,
+    required this.onTabChanged,
+  });
+
+  String _labelFor(_RouteTab tab) => switch (tab) {
+        _RouteTab.overview => 'Overview',
+        _RouteTab.keyPoints =>
+          'Key Points (${route.functionalPoints.length})',
+        _RouteTab.riskPoints =>
+          'Risk Points (${route.riskPoints.length})',
+      };
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
       child: Row(
-        children: List.generate(tabs.length, (i) {
-          final selected = _tab == i;
+        children: _RouteTab.values.map((tab) {
+          final selected = selectedTab == tab;
+          final label = _labelFor(tab);
           return Expanded(
             child: GestureDetector(
-              onTap: () {
-                setState(() => _tab = i);
-                _tts.speakInterrupt(tabs[i]);
-              },
+              onTap: () => onTabChanged(tab),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
@@ -178,13 +244,12 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   ),
                 ),
                 child: Text(
-                  tabs[i],
+                  label,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: selected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    fontWeight:
+                        selected ? FontWeight.bold : FontWeight.normal,
                     color: selected
                         ? const Color(0xFF1565C0)
                         : Colors.grey[600],
@@ -193,78 +258,108 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               ),
             ),
           );
-        }),
+        }).toList(),
       ),
     );
   }
+}
 
-  Widget _buildTabContent() {
-    switch (_tab) {
-      case 0:
-        return _buildOverviewTab();
-      case 1:
-        return _buildFunctionalPointsTab();
-      case 2:
-        return _buildRiskPointsTab();
-      default:
-        return const SizedBox.shrink();
-    }
-  }
+class _RouteTabContent extends StatelessWidget {
+  final _RouteTab selectedTab;
+  final RoutePlan route;
+  final void Function(String) onReadAloud;
 
-  Widget _buildOverviewTab() {
+  const _RouteTabContent({
+    required this.selectedTab,
+    required this.route,
+    required this.onReadAloud,
+  });
+
+  @override
+  Widget build(BuildContext context) => switch (selectedTab) {
+        _RouteTab.overview => _OverviewTab(route: route),
+        _RouteTab.keyPoints => _FunctionalPointsTab(
+            functionalPoints: route.functionalPoints,
+            onReadAloud: onReadAloud,
+          ),
+        _RouteTab.riskPoints => _RiskPointsTab(
+            riskPoints: route.riskPoints,
+            onReadAloud: onReadAloud,
+          ),
+      };
+}
+
+class _OverviewTab extends StatelessWidget {
+  final RoutePlan route;
+
+  const _OverviewTab({required this.route});
+
+  @override
+  Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (int i = 0; i < widget.route.legs.length; i++)
-          _LegCard(leg: widget.route.legs[i], index: i + 1),
+        for (int i = 0; i < route.legs.length; i++)
+          _LegCard(leg: route.legs[i], index: i + 1),
       ],
     );
   }
+}
 
-  Widget _buildFunctionalPointsTab() {
-    final fps = widget.route.functionalPoints;
-    if (fps.isEmpty) {
+class _FunctionalPointsTab extends StatelessWidget {
+  final List<FunctionalPoint> functionalPoints;
+  final void Function(String) onReadAloud;
+
+  const _FunctionalPointsTab({
+    required this.functionalPoints,
+    required this.onReadAloud,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (functionalPoints.isEmpty) {
       return const Center(
-          child: Text('No key points', style: TextStyle(fontSize: 16)));
+        child: Text('No key points', style: TextStyle(fontSize: 16)),
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: fps.length,
+      itemCount: functionalPoints.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => _FunctionalPointCard(
-        fp: fps[i],
-        onTts: () => _tts.speak(fps[i].description),
+      itemBuilder: (_, index) => _FunctionalPointCard(
+        functionalPoint: functionalPoints[index],
+        onTts: () => onReadAloud(functionalPoints[index].description),
       ),
     );
   }
+}
 
-  Widget _buildRiskPointsTab() {
-    final rps = widget.route.riskPoints;
-    if (rps.isEmpty) {
+class _RiskPointsTab extends StatelessWidget {
+  final List<RiskPoint> riskPoints;
+  final void Function(String) onReadAloud;
+
+  const _RiskPointsTab({
+    required this.riskPoints,
+    required this.onReadAloud,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (riskPoints.isEmpty) {
       return const Center(
-          child: Text('No risk points', style: TextStyle(fontSize: 16)));
+        child: Text('No risk points', style: TextStyle(fontSize: 16)),
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: rps.length,
+      itemCount: riskPoints.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => _RiskPointCard(
-        rp: rps[i],
-        onTts: () => _tts.speak(
-            'Caution, ${rps[i].severityLabel}: ${rps[i].description}'),
-      ),
-    );
-  }
-
-  Widget _buildBottomBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      child: LargeButton(
-        label: 'Start Simulated Navigation',
-        icon: Icons.navigation,
-        onPressed: _startNavigation,
-        semanticLabel:
-            'Start step-by-step simulated navigation. You can step through each instruction.',
+      itemBuilder: (_, index) => _RiskPointCard(
+        riskPoint: riskPoints[index],
+        onTts: () => onReadAloud(
+          'Caution, ${riskPoints[index].severityLabel}: '
+          '${riskPoints[index].description}',
+        ),
       ),
     );
   }
@@ -289,15 +384,14 @@ class _LegCard extends StatelessWidget {
             ? Colors.green[700]!
             : Colors.orange[700]!;
 
-    final dur = (leg.durationSeconds / 60).round();
-    final dist = leg.distanceMeters < 1000
+    final durationMinutes = (leg.durationSeconds / 60).round();
+    final distance = leg.distanceMeters < 1000
         ? '${leg.distanceMeters.round()} m'
         : '${(leg.distanceMeters / 1000).toStringAsFixed(1)} km';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -310,12 +404,15 @@ class _LegCard extends StatelessWidget {
                 Text(
                   'Leg $index: ${leg.modeLabel}',
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
-                Text('$dur min · $dist',
-                    style: TextStyle(
-                        fontSize: 13, color: Colors.grey[600])),
+                Text(
+                  '$durationMinutes min · $distance',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -327,31 +424,34 @@ class _LegCard extends StatelessWidget {
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                  horizontal: 8,
+                  vertical: 3,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'Route ${leg.transitInfo!['route']}  ${leg.transitInfo!['headsign']} (scheduled)',
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.blue[800]),
+                  'Route ${leg.transitInfo!['route']}  '
+                  '${leg.transitInfo!['headsign']} (scheduled)',
+                  style: TextStyle(fontSize: 13, color: Colors.blue[800]),
                 ),
               ),
             ],
             if (leg.steps.isNotEmpty) ...[
               const SizedBox(height: 10),
               ...leg.steps.map(
-                (s) => Padding(
+                (step) => Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('• ',
-                          style: TextStyle(fontSize: 15)),
+                      const Text('• ', style: TextStyle(fontSize: 15)),
                       Expanded(
-                        child: Text(s.instruction,
-                            style: const TextStyle(fontSize: 14)),
+                        child: Text(
+                          step.instruction,
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ),
                     ],
                   ),
@@ -366,42 +466,49 @@ class _LegCard extends StatelessWidget {
 }
 
 class _FunctionalPointCard extends StatelessWidget {
-  final FunctionalPoint fp;
+  final FunctionalPoint functionalPoint;
   final VoidCallback onTts;
 
-  const _FunctionalPointCard({required this.fp, required this.onTts});
+  const _FunctionalPointCard({
+    required this.functionalPoint,
+    required this.onTts,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isRequired =
-        fp.importance == FunctionalPointImportance.required;
-    final color =
-        isRequired ? Colors.blue[700]! : Colors.teal[700]!;
-    final typeIcon = fp.type.startsWith('bus')
+        functionalPoint.importance == FunctionalPointImportance.required;
+    final color = isRequired ? Colors.blue[700]! : Colors.teal[700]!;
+    final typeIcon = functionalPoint.type.startsWith('bus')
         ? Icons.directions_bus
-        : fp.type == 'building_entrance'
+        : functionalPoint.type == 'building_entrance'
             ? Icons.door_front_door
             : Icons.place;
 
     return Semantics(
-      label: '${fp.importanceLabel} point: ${fp.description}',
+      label: '${functionalPoint.importanceLabel} point: '
+          '${functionalPoint.description}',
       child: Card(
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
           leading: CircleAvatar(
             backgroundColor: color,
             child: Icon(typeIcon, color: Colors.white),
           ),
-          title: Text(fp.description,
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w500)),
+          title: Text(
+            functionalPoint.description,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          ),
           subtitle: Text(
-            '${fp.importanceLabel} · Trigger at ${fp.triggerDistanceMeters.round()} m',
-            style:
-                TextStyle(fontSize: 13, color: Colors.grey[600]),
+            '${functionalPoint.importanceLabel} · '
+            'Trigger at ${functionalPoint.triggerDistanceMeters.round()} m',
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
           trailing: IconButton(
             icon: const Icon(Icons.volume_up),
@@ -414,39 +521,42 @@ class _FunctionalPointCard extends StatelessWidget {
 }
 
 class _RiskPointCard extends StatelessWidget {
-  final RiskPoint rp;
+  final RiskPoint riskPoint;
   final VoidCallback onTts;
 
-  const _RiskPointCard({required this.rp, required this.onTts});
+  const _RiskPointCard({required this.riskPoint, required this.onTts});
 
   @override
   Widget build(BuildContext context) {
-    final color = rp.severity == RiskSeverity.high
+    final color = riskPoint.severity == RiskSeverity.high
         ? Colors.red[700]!
-        : rp.severity == RiskSeverity.medium
+        : riskPoint.severity == RiskSeverity.medium
             ? Colors.orange[700]!
             : Colors.yellow[700]!;
 
     return Semantics(
-      label: '${rp.severityLabel}: ${rp.description}',
+      label: '${riskPoint.severityLabel}: ${riskPoint.description}',
       child: Card(
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
           leading: CircleAvatar(
             backgroundColor: color,
-            child: const Icon(Icons.warning_amber_rounded,
-                color: Colors.white),
+            child: const Icon(Icons.warning_amber_rounded, color: Colors.white),
           ),
-          title: Text(rp.description,
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w500)),
+          title: Text(
+            riskPoint.description,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          ),
           subtitle: Text(
-            '${rp.severityLabel} · Trigger at ${rp.triggerDistanceMeters.round()} m',
-            style:
-                TextStyle(fontSize: 13, color: Colors.grey[600]),
+            '${riskPoint.severityLabel} · '
+            'Trigger at ${riskPoint.triggerDistanceMeters.round()} m',
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
           trailing: IconButton(
             icon: const Icon(Icons.volume_up),

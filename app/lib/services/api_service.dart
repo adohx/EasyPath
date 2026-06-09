@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../models/place.dart';
@@ -11,18 +12,82 @@ class ApiService {
   ApiService._();
   static final ApiService instance = ApiService._();
 
+  /// Tries the own backend, then Nominatim directly, then a local mock.
   Future<List<Place>> searchPlaces(String query) async {
     try {
-      final uri = Uri.parse('$kBackendBase/api/places/search?q=${Uri.encodeComponent(query)}');
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+      final uri = Uri.parse(
+        '$kBackendBase/api/places/search'
+        '?q=${Uri.encodeComponent(query)}',
+      );
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final results = data['results'] as List<dynamic>;
-        return results
-            .map((r) => Place.fromJson(r as Map<String, dynamic>))
-            .toList();
+        if (results.isNotEmpty) {
+          return results
+              .map((r) => Place.fromJson(r as Map<String, dynamic>))
+              .toList();
+        }
       }
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      developer.log(
+        'Backend place search failed',
+        name: 'app.api',
+        level: 1000,
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      // Windsor context appended so generic terms like "library" find
+      // Windsor results first.
+      final searchQuery = _withWindsorContext(query);
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': searchQuery,
+        'format': 'jsonv2',
+        'countrycodes': 'ca',
+        'limit': '10',
+        'viewbox': '-83.3,42.6,-82.7,42.1',
+        // '0' is a soft viewbox preference, not a hard filter.
+        'bounded': '0',
+        'addressdetails': '1',
+      });
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'AccessibilityNavigationAssistant/2.0'},
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        if (data.isNotEmpty) {
+          return data.map((item) {
+            final entry = item as Map<String, dynamic>;
+            final display = entry['display_name'] as String? ?? '';
+            final name = (entry['name'] as String?)?.isNotEmpty == true
+                ? entry['name'] as String
+                : display.split(',').first.trim();
+            return Place(
+              id: 'nominatim_${entry['place_id']}',
+              name: name,
+              address: display,
+              lat: double.parse(entry['lat'] as String),
+              lon: double.parse(entry['lon'] as String),
+              type: entry['type'] as String? ?? 'place',
+            );
+          }).toList();
+        }
+      }
+    } catch (e, stackTrace) {
+      developer.log(
+        'Nominatim place search failed',
+        name: 'app.api',
+        level: 1000,
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
     return _mockPlaces(query);
   }
 
@@ -52,10 +117,19 @@ class ApiService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final routes = data['routes'] as List<dynamic>;
         return routes
-            .map((r) => RoutePlan.fromJson(r as Map<String, dynamic>))
+            .map((route) =>
+                RoutePlan.fromJson(route as Map<String, dynamic>))
             .toList();
       }
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      developer.log(
+        'Route planning failed',
+        name: 'app.api',
+        level: 1000,
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
     return _mockRoutes();
   }
 
@@ -66,22 +140,39 @@ class ApiService {
   }) async {
     try {
       final uri = Uri.parse(
-          '$kBackendBase/api/exploration/nearby?lat=$lat&lon=$lon&radius_meters=$radiusMeters');
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+        '$kBackendBase/api/exploration/nearby'
+        '?lat=$lat&lon=$lon&radius_meters=$radiusMeters',
+      );
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final cats = data['categories'] as Map<String, dynamic>;
-        return _parseCategories(cats);
+        final rawCategories =
+            data['categories'] as Map<String, dynamic>;
+        return _parseCategories(rawCategories);
       }
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      developer.log(
+        'Nearby exploration failed',
+        name: 'app.api',
+        level: 1000,
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
     return _mockExploration(lat, lon);
   }
 
-  List<ExplorationCategory> _parseCategories(Map<String, dynamic> cats) {
+  List<ExplorationCategory> _parseCategories(
+    Map<String, dynamic> rawCategories,
+  ) {
     final result = <ExplorationCategory>[];
-    for (final entry in cats.entries) {
+    for (final entry in rawCategories.entries) {
       final items = (entry.value as List<dynamic>)
-          .map((i) => ExplorationItem.fromJson(i as Map<String, dynamic>))
+          .map(
+            (item) =>
+                ExplorationItem.fromJson(item as Map<String, dynamic>),
+          )
           .toList();
       if (items.isNotEmpty) {
         result.add(ExplorationCategory(key: entry.key, items: items));
@@ -90,7 +181,13 @@ class ApiService {
     return result;
   }
 
-  // ── Fallback mock data ──────────────────────────────────────────────────────
+  String _withWindsorContext(String query) {
+    final lower = query.toLowerCase();
+    if (lower.contains('windsor') || lower.contains('ontario')) {
+      return query;
+    }
+    return '$query Windsor Ontario';
+  }
 
   List<Place> _mockPlaces(String query) => [
         Place(
@@ -128,7 +225,8 @@ class ApiService {
               distanceMeters: 250,
               steps: [
                 const NavigationStep(
-                  instruction: 'Head north on Ouellette Avenue for approximately 250 metres',
+                  instruction: 'Head north on Ouellette Avenue for '
+                      'approximately 250 metres',
                   distanceMeters: 250,
                 ),
               ],
@@ -142,15 +240,18 @@ class ApiService {
               distanceMeters: 2100,
               steps: [
                 const NavigationStep(
-                  instruction: 'Board Route 1A bus towards Downtown at Ouellette Ave / Wyandotte St',
+                  instruction: 'Board Route 1A bus towards Downtown at '
+                      'Ouellette Ave / Wyandotte St',
                   distanceMeters: 0,
                 ),
                 const NavigationStep(
-                  instruction: 'Ride approximately 2.1 kilometres to Ouellette Ave / Elliott St',
+                  instruction: 'Ride approximately 2.1 kilometres to '
+                      'Ouellette Ave / Elliott St',
                   distanceMeters: 2100,
                 ),
                 const NavigationStep(
-                  instruction: 'Alight here — this is your stop at Ouellette Ave / Elliott St',
+                  instruction: 'Alight here — this is your stop at '
+                      'Ouellette Ave / Elliott St',
                   distanceMeters: 0,
                 ),
               ],
@@ -165,11 +266,13 @@ class ApiService {
               distanceMeters: 200,
               steps: [
                 const NavigationStep(
-                  instruction: 'Walk north on Ouellette Avenue for approximately 120 metres',
+                  instruction: 'Walk north on Ouellette Avenue for '
+                      'approximately 120 metres',
                   distanceMeters: 120,
                 ),
                 const NavigationStep(
-                  instruction: 'Turn left — the library entrance appears to be on your left',
+                  instruction: 'Turn left — the library entrance appears '
+                      'to be on your left',
                   distanceMeters: 80,
                 ),
               ],
@@ -179,7 +282,8 @@ class ApiService {
             FunctionalPoint(
               id: 'fp_001',
               type: 'bus_board',
-              description: 'Board Route 1A bus at Ouellette Ave / Wyandotte St',
+              description: 'Board Route 1A bus at '
+                  'Ouellette Ave / Wyandotte St',
               importance: FunctionalPointImportance.required,
               triggerDistanceMeters: 80,
               lat: 42.3170,
@@ -208,8 +312,8 @@ class ApiService {
             RiskPoint(
               id: 'rp_001',
               type: 'intersection',
-              description:
-                  'Ouellette Ave at Wyandotte St — busy intersection, audible pedestrian signal may be present',
+              description: 'Ouellette Ave at Wyandotte St — busy '
+                  'intersection, audible pedestrian signal may be present',
               severity: RiskSeverity.medium,
               triggerDistanceMeters: 100,
               lat: 42.3170,
@@ -243,19 +347,23 @@ class ApiService {
               distanceMeters: 1800,
               steps: [
                 const NavigationStep(
-                  instruction: 'Head north on Ouellette Avenue for approximately 300 metres',
+                  instruction: 'Head north on Ouellette Avenue for '
+                      'approximately 300 metres',
                   distanceMeters: 300,
                 ),
                 const NavigationStep(
-                  instruction: 'Continue north through the Wyandotte Street intersection',
+                  instruction: 'Continue north through the Wyandotte '
+                      'Street intersection',
                   distanceMeters: 500,
                 ),
                 const NavigationStep(
-                  instruction: 'Continue north on Ouellette Avenue for approximately 1 kilometre',
+                  instruction: 'Continue north on Ouellette Avenue for '
+                      'approximately 1 kilometre',
                   distanceMeters: 1000,
                 ),
                 const NavigationStep(
-                  instruction: 'The library entrance appears to be on your left',
+                  instruction:
+                      'The library entrance appears to be on your left',
                   distanceMeters: 0,
                 ),
               ],
@@ -285,7 +393,8 @@ class ApiService {
             RiskPoint(
               id: 'rp_102',
               type: 'intersection',
-              description: 'Ouellette Ave at University Ave intersection',
+              description:
+                  'Ouellette Ave at University Ave intersection',
               severity: RiskSeverity.low,
               triggerDistanceMeters: 80,
               lat: 42.3180,
