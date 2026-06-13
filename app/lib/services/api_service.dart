@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../models/place.dart';
@@ -9,8 +10,14 @@ import '../models/risk_point.dart';
 import '../models/exploration_item.dart';
 
 class ApiService {
-  ApiService._();
+  ApiService._() : _client = http.Client();
+
+  @visibleForTesting
+  ApiService.withClient(this._client);
+
   static final ApiService instance = ApiService._();
+
+  final http.Client _client;
 
   /// Tries the own backend, then Nominatim directly, then a local mock.
   Future<List<Place>> searchPlaces(String query) async {
@@ -20,7 +27,7 @@ class ApiService {
         '?q=${Uri.encodeComponent(query)}',
       );
       final response =
-          await http.get(uri).timeout(const Duration(seconds: 5));
+          await _client.get(uri).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final results = data['results'] as List<dynamic>;
@@ -54,7 +61,7 @@ class ApiService {
         'bounded': '0',
         'addressdetails': '1',
       });
-      final response = await http.get(
+      final response = await _client.get(
         uri,
         headers: {'User-Agent': 'AccessibilityNavigationAssistant/2.0'},
       ).timeout(const Duration(seconds: 8));
@@ -101,7 +108,7 @@ class ApiService {
   }) async {
     try {
       final uri = Uri.parse('$kBackendBase/api/routes/plan');
-      final response = await http
+      final response = await _client
           .post(
             uri,
             headers: {'Content-Type': 'application/json'},
@@ -144,7 +151,7 @@ class ApiService {
         '?lat=$lat&lon=$lon&radius_meters=$radiusMeters',
       );
       final response =
-          await http.get(uri).timeout(const Duration(seconds: 5));
+          await _client.get(uri).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final rawCategories =
