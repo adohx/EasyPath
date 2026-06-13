@@ -1,6 +1,6 @@
 import pytest
 
-from main import _bearing, _haversine
+from main import _bearing, _decode_polyline, _haversine
 
 
 def test_haversine_same_point_is_zero():
@@ -35,4 +35,24 @@ def test_haversine_is_symmetric():
 def test_bearing_cardinal_directions(lat2, lon2, expected_bearing):
     assert _bearing(0, 0, lat2, lon2) == pytest.approx(
         expected_bearing, abs=0.5
+    )
+
+
+def _flatten(coords: list[list[float]]) -> list[float]:
+    return [value for point in coords for value in point]
+
+
+def test_decode_polyline_matches_google_example():
+    encoded = "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+    coords = _decode_polyline(encoded, 5)
+    assert _flatten(coords) == pytest.approx(
+        _flatten([[38.5, -120.2], [40.7, -120.95], [43.252, -126.453]])
+    )
+
+
+def test_decode_polyline_at_motis_precision_7():
+    encoded = "wq|afXrmoxnp@lggIqmrg@"
+    coords = _decode_polyline(encoded, 7)
+    assert _flatten(coords) == pytest.approx(
+        _flatten([[42.3148332, -83.036593], [42.2980261, -82.9700609]])
     )

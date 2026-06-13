@@ -1,4 +1,5 @@
 import httpx
+import pytest
 import respx
 
 from main import MOTIS_URL, NOMINATIM_URL, OSRM_URL, OVERPASS_URL
@@ -150,38 +151,40 @@ def test_plan_route_uses_motis_when_available(client):
         return_value=httpx.Response(
             200,
             json={
-                "plan": {
-                    "itineraries": [
-                        {
-                            "duration": 600,
-                            "walkDistance": 450,
-                            "legs": [
-                                {
-                                    "mode": "WALK",
-                                    "from": {
-                                        "name": "Current Location",
-                                        "lat": 42.3149,
-                                        "lon": -83.0364,
-                                    },
-                                    "to": {
-                                        "name": "Windsor Public Library",
-                                        "lat": 42.3192,
-                                        "lon": -83.0391,
-                                    },
-                                    "duration": 600,
-                                    "distance": 450,
-                                    "steps": [
-                                        {
-                                            "relativeDirection": "depart",
-                                            "streetName": "Ouellette Avenue",
-                                            "distance": 450,
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ]
-                }
+                "itineraries": [
+                    {
+                        "duration": 600,
+                        "legs": [
+                            {
+                                "mode": "WALK",
+                                "from": {
+                                    "name": "Current Location",
+                                    "lat": 42.3149,
+                                    "lon": -83.0364,
+                                },
+                                "to": {
+                                    "name": "Windsor Public Library",
+                                    "lat": 42.3192,
+                                    "lon": -83.0391,
+                                },
+                                "duration": 600,
+                                "distance": 450,
+                                "legGeometry": {
+                                    "points": "wq|afXrmoxnp@lggIqmrg@",
+                                    "precision": 7,
+                                    "length": 2,
+                                },
+                                "steps": [
+                                    {
+                                        "relativeDirection": "DEPART",
+                                        "streetName": "Ouellette Avenue",
+                                        "distance": 450,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
             },
         )
     )
@@ -193,7 +196,214 @@ def test_plan_route_uses_motis_when_available(client):
     assert route["total_duration_seconds"] == 600
     assert route["total_walking_distance_meters"] == 450
     assert route["legs"][0]["steps"][0]["instruction"] == (
-        "Depart on Ouellette Avenue for 450 metres"
+        "Head out on Ouellette Avenue for 450 metres"
+    )
+    flat_geometry = [value for point in route["geometry"] for value in point]
+    assert flat_geometry == pytest.approx(
+        [42.3148332, -83.036593, 42.2980261, -82.9700609]
+    )
+
+
+@respx.mock
+def test_plan_route_motis_transit_itinerary(client):
+    respx.post(OVERPASS_URL).mock(
+        return_value=httpx.Response(200, json={"elements": []})
+    )
+    respx.get(f"{MOTIS_URL}/api/v1/plan").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "itineraries": [
+                    {
+                        "duration": 1680,
+                        "legs": [
+                            {
+                                "mode": "WALK",
+                                "from": {
+                                    "name": "Current Location",
+                                    "lat": 42.3149,
+                                    "lon": -83.0364,
+                                },
+                                "to": {
+                                    "name": "Ouellette Ave at Wyandotte St",
+                                    "lat": 42.3170,
+                                    "lon": -83.0370,
+                                },
+                                "duration": 180,
+                                "distance": 250,
+                                "steps": [
+                                    {
+                                        "relativeDirection": "DEPART",
+                                        "streetName": "Ouellette Avenue",
+                                        "distance": 250,
+                                    }
+                                ],
+                            },
+                            {
+                                "mode": "BUS",
+                                "from": {
+                                    "name": "Ouellette Ave at Wyandotte St",
+                                    "lat": 42.3170,
+                                    "lon": -83.0370,
+                                },
+                                "to": {
+                                    "name": "Ouellette Ave at Elliott St",
+                                    "lat": 42.3190,
+                                    "lon": -83.0385,
+                                },
+                                "duration": 1200,
+                                "routeShortName": "1A",
+                                "headsign": "Downtown",
+                                "agencyName": "Transit Windsor",
+                                "realTime": False,
+                                "steps": [],
+                            },
+                            {
+                                "mode": "WALK",
+                                "from": {
+                                    "name": "Ouellette Ave at Elliott St",
+                                    "lat": 42.3190,
+                                    "lon": -83.0385,
+                                },
+                                "to": {
+                                    "name": "Windsor Public Library",
+                                    "lat": 42.3192,
+                                    "lon": -83.0391,
+                                },
+                                "duration": 300,
+                                "distance": 200,
+                                "steps": [],
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+    )
+
+    resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
+    assert resp.status_code == 200
+    route = resp.json()["routes"][0]
+    assert route["mode"] == "transit"
+    assert route["transfer_count"] == 0
+    assert route["accessibility_summary"]["transfer_count"] == 0
+
+    bus_leg = route["legs"][1]
+    assert bus_leg["mode"] == "bus"
+    assert bus_leg["transit_info"] == {
+        "route": "1A",
+        "headsign": "Downtown",
+        "agency": "Transit Windsor",
+        "scheduled": True,
+    }
+
+    fp_types = [fp["type"] for fp in route["functional_points"]]
+    assert "bus_board" in fp_types
+    assert "bus_alight" in fp_types
+    assert "building_entrance" in fp_types
+
+
+@respx.mock
+def test_plan_route_motis_transit_transfer(client):
+    respx.post(OVERPASS_URL).mock(
+        return_value=httpx.Response(200, json={"elements": []})
+    )
+    respx.get(f"{MOTIS_URL}/api/v1/plan").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "itineraries": [
+                    {
+                        "duration": 2000,
+                        "legs": [
+                            {
+                                "mode": "WALK",
+                                "from": {
+                                    "name": "Current Location",
+                                    "lat": 42.3149,
+                                    "lon": -83.0364,
+                                },
+                                "to": {
+                                    "name": "Stop A",
+                                    "lat": 42.3170,
+                                    "lon": -83.0370,
+                                },
+                                "duration": 180,
+                                "distance": 200,
+                                "steps": [],
+                            },
+                            {
+                                "mode": "BUS",
+                                "from": {
+                                    "name": "Stop A",
+                                    "lat": 42.3170,
+                                    "lon": -83.0370,
+                                },
+                                "to": {
+                                    "name": "Transfer Stop",
+                                    "lat": 42.3180,
+                                    "lon": -83.0378,
+                                },
+                                "duration": 600,
+                                "routeShortName": "1A",
+                                "headsign": "Downtown",
+                                "agencyName": "Transit Windsor",
+                                "realTime": False,
+                                "steps": [],
+                            },
+                            {
+                                "mode": "BUS",
+                                "from": {
+                                    "name": "Transfer Stop",
+                                    "lat": 42.3180,
+                                    "lon": -83.0378,
+                                },
+                                "to": {
+                                    "name": "Stop B",
+                                    "lat": 42.3190,
+                                    "lon": -83.0385,
+                                },
+                                "duration": 600,
+                                "routeShortName": "2B",
+                                "headsign": "College",
+                                "agencyName": "Transit Windsor",
+                                "realTime": False,
+                                "steps": [],
+                            },
+                            {
+                                "mode": "WALK",
+                                "from": {
+                                    "name": "Stop B",
+                                    "lat": 42.3190,
+                                    "lon": -83.0385,
+                                },
+                                "to": {
+                                    "name": "Windsor Public Library",
+                                    "lat": 42.3192,
+                                    "lon": -83.0391,
+                                },
+                                "duration": 200,
+                                "distance": 200,
+                                "steps": [],
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+    )
+
+    resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
+    assert resp.status_code == 200
+    route = resp.json()["routes"][0]
+    assert route["transfer_count"] == 1
+
+    transfer_points = [
+        fp for fp in route["functional_points"] if fp["type"] == "bus_transfer"
+    ]
+    assert len(transfer_points) == 1
+    assert "Transfer to Route 2B (College) at Transfer Stop" in (
+        transfer_points[0]["description"]
     )
 
 
@@ -222,8 +432,18 @@ def test_plan_route_falls_back_to_mock_when_all_sources_fail(client):
 
     resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
     assert resp.status_code == 200
-    route = resp.json()["routes"][0]
-    assert route["id"] == "mock_route_001"
+    routes = resp.json()["routes"]
+    assert routes[0]["id"] == "mock_route_001"
+
+    transit_route = next(r for r in routes if r["id"] == "mock_route_002")
+    assert transit_route["mode"] == "transit"
+    assert transit_route["transfer_count"] == 0
+    assert transit_route["legs"][1]["transit_info"]["route"] == "1A"
+    fp_types = [fp["type"] for fp in transit_route["functional_points"]]
+    assert "bus_board" in fp_types
+    assert "bus_alight" in fp_types
+    rp_types = [rp["type"] for rp in transit_route["risk_points"]]
+    assert "bus_risk" in rp_types
 
 
 # ── /api/exploration/nearby ──────────────────────────────────────────────────

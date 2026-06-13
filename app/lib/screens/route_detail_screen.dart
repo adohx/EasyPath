@@ -388,6 +388,12 @@ class _LegCard extends StatelessWidget {
     final distance = leg.distanceMeters < 1000
         ? '${leg.distanceMeters.round()} m'
         : '${(leg.distanceMeters / 1000).toStringAsFixed(1)} km';
+    final scheduled = leg.transitInfo?['scheduled'] as bool?;
+    final scheduleLabel = switch (scheduled) {
+      true => ' (scheduled)',
+      false => ' (real-time)',
+      null => '',
+    };
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -433,7 +439,7 @@ class _LegCard extends StatelessWidget {
                 ),
                 child: Text(
                   'Route ${leg.transitInfo!['route']}  '
-                  '${leg.transitInfo!['headsign']} (scheduled)',
+                  '${leg.transitInfo!['headsign']}$scheduleLabel',
                   style: TextStyle(fontSize: 13, color: Colors.blue[800]),
                 ),
               ),

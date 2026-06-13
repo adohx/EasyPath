@@ -275,13 +275,15 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
         point: point,
         width: 44,
         height: 44,
-        child: GestureDetector(
-          onTap: () => setState(() => _tooltip = label),
-          child: Icon(
-            icon,
-            color: color,
-            size: 36,
-            shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+        child: RepaintBoundary(
+          child: GestureDetector(
+            onTap: () => setState(() => _tooltip = label),
+            child: Icon(
+              icon,
+              color: color,
+              size: 36,
+              shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+            ),
           ),
         ),
       );
