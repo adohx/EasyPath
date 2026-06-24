@@ -41,9 +41,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   void _startNavigation() {
     _ttsService.stop();
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NavigationScreen(route: widget.route),
-      ),
+      MaterialPageRoute(builder: (_) => NavigationScreen(route: widget.route)),
     );
   }
 
@@ -52,8 +50,6 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Route · ${widget.route.modeLabel}'),
-        backgroundColor: const Color(0xFF1565C0),
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.map_outlined),
@@ -99,11 +95,11 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
             child: LargeButton(
-              label: 'Start Simulated Navigation',
+              label: 'Start Navigation',
               icon: Icons.navigation,
               onPressed: _startNavigation,
               semanticLabel:
-                  'Start step-by-step simulated navigation. '
+                  'Start navigation. '
                   'You can step through each instruction.',
             ),
           ),
@@ -113,12 +109,11 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   }
 
   String _tabLabel(_RouteTab tab) => switch (tab) {
-        _RouteTab.overview => 'Overview',
-        _RouteTab.keyPoints =>
-          'Key Points (${widget.route.functionalPoints.length})',
-        _RouteTab.riskPoints =>
-          'Risk Points (${widget.route.riskPoints.length})',
-      };
+    _RouteTab.overview => 'Overview',
+    _RouteTab.keyPoints =>
+      'Key Points (${widget.route.functionalPoints.length})',
+    _RouteTab.riskPoints => 'Risk Points (${widget.route.riskPoints.length})',
+  };
 }
 
 class _AccessibilityScoreBar extends StatelessWidget {
@@ -136,8 +131,8 @@ class _AccessibilityScoreBar extends StatelessWidget {
     final color = summary.score >= 80
         ? Colors.green[700]!
         : summary.score >= 60
-            ? Colors.orange[700]!
-            : Colors.red[700]!;
+        ? Colors.orange[700]!
+        : Colors.red[700]!;
     return Semantics(
       label: 'Accessibility score ${summary.score}. ${summary.ttsDescription}',
       child: Container(
@@ -165,9 +160,12 @@ class _AccessibilityScoreBar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Accessibility Score',
-                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -181,10 +179,7 @@ class _AccessibilityScoreBar extends StatelessWidget {
                   if (summary.audibleSignals > 0)
                     Text(
                       '${summary.audibleSignals} audible signal${summary.audibleSignals == 1 ? '' : 's'}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.green[700],
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.green[700]),
                     ),
                 ],
               ),
@@ -213,17 +208,16 @@ class _RouteTabBar extends StatelessWidget {
   });
 
   String _labelFor(_RouteTab tab) => switch (tab) {
-        _RouteTab.overview => 'Overview',
-        _RouteTab.keyPoints =>
-          'Key Points (${route.functionalPoints.length})',
-        _RouteTab.riskPoints =>
-          'Risk Points (${route.riskPoints.length})',
-      };
+    _RouteTab.overview => 'Overview',
+    _RouteTab.keyPoints => 'Key Points (${route.functionalPoints.length})',
+    _RouteTab.riskPoints => 'Risk Points (${route.riskPoints.length})',
+  };
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.white,
+      color: colorScheme.surface,
       child: Row(
         children: _RouteTab.values.map((tab) {
           final selected = selectedTab == tab;
@@ -237,7 +231,7 @@ class _RouteTabBar extends StatelessWidget {
                   border: Border(
                     bottom: BorderSide(
                       color: selected
-                          ? const Color(0xFF1565C0)
+                          ? colorScheme.primary
                           : Colors.transparent,
                       width: 3,
                     ),
@@ -248,11 +242,10 @@ class _RouteTabBar extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        selected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                     color: selected
-                        ? const Color(0xFF1565C0)
-                        : Colors.grey[600],
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -277,16 +270,16 @@ class _RouteTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => switch (selectedTab) {
-        _RouteTab.overview => _OverviewTab(route: route),
-        _RouteTab.keyPoints => _FunctionalPointsTab(
-            functionalPoints: route.functionalPoints,
-            onReadAloud: onReadAloud,
-          ),
-        _RouteTab.riskPoints => _RiskPointsTab(
-            riskPoints: route.riskPoints,
-            onReadAloud: onReadAloud,
-          ),
-      };
+    _RouteTab.overview => _OverviewTab(route: route),
+    _RouteTab.keyPoints => _FunctionalPointsTab(
+      functionalPoints: route.functionalPoints,
+      onReadAloud: onReadAloud,
+    ),
+    _RouteTab.riskPoints => _RiskPointsTab(
+      riskPoints: route.riskPoints,
+      onReadAloud: onReadAloud,
+    ),
+  };
 }
 
 class _OverviewTab extends StatelessWidget {
@@ -338,10 +331,7 @@ class _RiskPointsTab extends StatelessWidget {
   final List<RiskPoint> riskPoints;
   final void Function(String) onReadAloud;
 
-  const _RiskPointsTab({
-    required this.riskPoints,
-    required this.onReadAloud,
-  });
+  const _RiskPointsTab({required this.riskPoints, required this.onReadAloud});
 
   @override
   Widget build(BuildContext context) {
@@ -373,16 +363,17 @@ class _LegCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final modeIcon = leg.mode == 'bus'
         ? Icons.directions_bus
         : leg.mode == 'walk'
-            ? Icons.directions_walk
-            : Icons.local_taxi;
+        ? Icons.directions_walk
+        : Icons.local_taxi;
     final modeColor = leg.mode == 'bus'
-        ? Colors.blue[700]!
+        ? colorScheme.primary
         : leg.mode == 'walk'
-            ? Colors.green[700]!
-            : Colors.orange[700]!;
+        ? Colors.green[700]!
+        : Colors.orange[700]!;
 
     final durationMinutes = (leg.durationSeconds / 60).round();
     final distance = leg.distanceMeters < 1000
@@ -417,30 +408,33 @@ class _LegCard extends StatelessWidget {
                 const Spacer(),
                 Text(
                   '$durationMinutes min · $distance',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Text(
               '${leg.fromName}  →  ${leg.toName}',
-              style: const TextStyle(fontSize: 14, color: Colors.black87),
+              style: TextStyle(fontSize: 14, color: colorScheme.onSurface),
             ),
             if (leg.transitInfo != null) ...[
               const SizedBox(height: 4),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   'Route ${leg.transitInfo!['route']}  '
                   '${leg.transitInfo!['headsign']}$scheduleLabel',
-                  style: TextStyle(fontSize: 13, color: Colors.blue[800]),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
                 ),
               ),
             ],
@@ -482,22 +476,22 @@ class _FunctionalPointCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final isRequired =
         functionalPoint.importance == FunctionalPointImportance.required;
-    final color = isRequired ? Colors.blue[700]! : Colors.teal[700]!;
+    final color = isRequired ? colorScheme.primary : colorScheme.secondary;
     final typeIcon = functionalPoint.type.startsWith('bus')
         ? Icons.directions_bus
         : functionalPoint.type == 'building_entrance'
-            ? Icons.door_front_door
-            : Icons.place;
+        ? Icons.door_front_door
+        : Icons.place;
 
     return Semantics(
-      label: '${functionalPoint.importanceLabel} point: '
+      label:
+          '${functionalPoint.importanceLabel} point: '
           '${functionalPoint.description}',
       child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -505,7 +499,12 @@ class _FunctionalPointCard extends StatelessWidget {
           ),
           leading: CircleAvatar(
             backgroundColor: color,
-            child: Icon(typeIcon, color: Colors.white),
+            child: Icon(
+              typeIcon,
+              color: isRequired
+                  ? colorScheme.onPrimary
+                  : colorScheme.onSecondary,
+            ),
           ),
           title: Text(
             functionalPoint.description,
@@ -514,7 +513,7 @@ class _FunctionalPointCard extends StatelessWidget {
           subtitle: Text(
             '${functionalPoint.importanceLabel} · '
             'Trigger at ${functionalPoint.triggerDistanceMeters.round()} m',
-            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
           ),
           trailing: IconButton(
             icon: const Icon(Icons.volume_up),
@@ -537,15 +536,13 @@ class _RiskPointCard extends StatelessWidget {
     final color = riskPoint.severity == RiskSeverity.high
         ? Colors.red[700]!
         : riskPoint.severity == RiskSeverity.medium
-            ? Colors.orange[700]!
-            : Colors.yellow[700]!;
+        ? Colors.orange[700]!
+        : Colors.yellow[700]!;
 
     return Semantics(
       label: '${riskPoint.severityLabel}: ${riskPoint.description}',
       child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -562,7 +559,10 @@ class _RiskPointCard extends StatelessWidget {
           subtitle: Text(
             '${riskPoint.severityLabel} · '
             'Trigger at ${riskPoint.triggerDistanceMeters.round()} m',
-            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           trailing: IconButton(
             icon: const Icon(Icons.volume_up),

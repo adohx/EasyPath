@@ -40,6 +40,8 @@ dependencies:
   geolocator: ^13.0.0
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
+  flutter_compass: ^0.8.1
+  vibration: ^3.2.0
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +57,7 @@ dev_dependencies:
   test: ^1.31.0
   geolocator_platform_interface: ^4.2.8
   plugin_platform_interface: ^2.1.8
+  vibration_platform_interface: ^0.1.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

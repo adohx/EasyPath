@@ -45,9 +45,7 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
   String? _tooltip;
 
   List<LatLng> get _allPoints {
-    final points = <LatLng>[
-      LatLng(widget.origin.lat, widget.origin.lon),
-    ];
+    final points = <LatLng>[LatLng(widget.origin.lat, widget.origin.lon)];
     if (widget.destination case final destination?) {
       points.add(LatLng(destination.lat, destination.lon));
     }
@@ -82,10 +80,7 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
       if (point.longitude < minLon) minLon = point.longitude;
       if (point.longitude > maxLon) maxLon = point.longitude;
     }
-    return LatLngBounds(
-      LatLng(minLat, minLon),
-      LatLng(maxLat, maxLon),
-    );
+    return LatLngBounds(LatLng(minLat, minLon), LatLng(maxLat, maxLon));
   }
 
   @override
@@ -110,9 +105,7 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
       final route = widget.routes[i];
       final color = _kRouteColors[i % _kRouteColors.length];
       final points = route.geometry.isNotEmpty
-          ? route.geometry
-              .map((coord) => LatLng(coord[0], coord[1]))
-              .toList()
+          ? route.geometry.map((coord) => LatLng(coord[0], coord[1])).toList()
           : _fallbackLine(route);
       if (points.isNotEmpty) {
         lines.add(Polyline(points: points, color: color, strokeWidth: 5));
@@ -145,11 +138,7 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_title),
-        backgroundColor: const Color(0xFF1565C0),
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: Text(_title)),
       body: Stack(
         children: [
           FlutterMap(
@@ -161,13 +150,10 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName:
-                    'com.ana.accessibility_nav_assistant',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.ana.accessibility_nav_assistant',
               ),
-              if (_polylines.isNotEmpty)
-                PolylineLayer(polylines: _polylines),
+              if (_polylines.isNotEmpty) PolylineLayer(polylines: _polylines),
               MarkerLayer(markers: _buildMarkers()),
             ],
           ),
@@ -204,40 +190,48 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
   List<Marker> _buildMarkers() {
     final markers = <Marker>[];
 
-    markers.add(_pinMarker(
-      point: LatLng(widget.origin.lat, widget.origin.lon),
-      color: Colors.green[700]!,
-      icon: Icons.my_location,
-      label: 'Origin: ${widget.origin.name}',
-    ));
+    markers.add(
+      _pinMarker(
+        point: LatLng(widget.origin.lat, widget.origin.lon),
+        color: Colors.green[700]!,
+        icon: Icons.my_location,
+        label: 'Origin: ${widget.origin.name}',
+      ),
+    );
 
     if (widget.destination case final destination?) {
-      markers.add(_pinMarker(
-        point: LatLng(destination.lat, destination.lon),
-        color: Colors.red[700]!,
-        icon: Icons.place,
-        label: 'Destination: ${destination.name}',
-      ));
+      markers.add(
+        _pinMarker(
+          point: LatLng(destination.lat, destination.lon),
+          color: Colors.red[700]!,
+          icon: Icons.place,
+          label: 'Destination: ${destination.name}',
+        ),
+      );
     }
 
     for (final place in widget.extraPlaces) {
-      markers.add(_pinMarker(
-        point: LatLng(place.lat, place.lon),
-        color: Colors.teal[600]!,
-        icon: Icons.location_on,
-        label: place.name,
-      ));
+      markers.add(
+        _pinMarker(
+          point: LatLng(place.lat, place.lon),
+          color: Colors.teal[600]!,
+          icon: Icons.location_on,
+          label: place.name,
+        ),
+      );
     }
 
     if (_showDetailMarkers && widget.routes.isNotEmpty) {
       final route = widget.routes.first;
       for (final functionalPoint in route.functionalPoints) {
-        markers.add(_circleMarker(
-          point: LatLng(functionalPoint.lat, functionalPoint.lon),
-          color: Colors.blue[700]!,
-          icon: _functionalPointIcon(functionalPoint),
-          label: '[Functional] ${functionalPoint.description}',
-        ));
+        markers.add(
+          _circleMarker(
+            point: LatLng(functionalPoint.lat, functionalPoint.lon),
+            color: Colors.blue[700]!,
+            icon: _functionalPointIcon(functionalPoint),
+            label: '[Functional] ${functionalPoint.description}',
+          ),
+        );
       }
       for (final riskPoint in route.riskPoints) {
         final color = switch (riskPoint.severity) {
@@ -245,74 +239,71 @@ class _DebugMapScreenState extends State<DebugMapScreen> {
           RiskSeverity.medium => Colors.orange,
           RiskSeverity.low => Colors.yellow[700]!,
         };
-        markers.add(_circleMarker(
-          point: LatLng(riskPoint.lat, riskPoint.lon),
-          color: color,
-          icon: Icons.warning_rounded,
-          label: '[Risk/${riskPoint.severity.name}] ${riskPoint.description}',
-        ));
+        markers.add(
+          _circleMarker(
+            point: LatLng(riskPoint.lat, riskPoint.lon),
+            color: color,
+            icon: Icons.warning_rounded,
+            label: '[Risk/${riskPoint.severity.name}] ${riskPoint.description}',
+          ),
+        );
       }
     }
 
     return markers;
   }
 
-  IconData _functionalPointIcon(FunctionalPoint point) =>
-      switch (point.type) {
-        'bus_board' || 'bus_alight' => Icons.directions_bus,
-        'building_entrance' => Icons.door_front_door,
-        'turn' => Icons.turn_right,
-        _ => Icons.circle,
-      };
+  IconData _functionalPointIcon(FunctionalPoint point) => switch (point.type) {
+    'bus_board' || 'bus_alight' => Icons.directions_bus,
+    'building_entrance' => Icons.door_front_door,
+    'turn' => Icons.turn_right,
+    _ => Icons.circle,
+  };
 
   Marker _pinMarker({
     required LatLng point,
     required Color color,
     required IconData icon,
     required String label,
-  }) =>
-      Marker(
-        point: point,
-        width: 44,
-        height: 44,
-        child: RepaintBoundary(
-          child: GestureDetector(
-            onTap: () => setState(() => _tooltip = label),
-            child: Icon(
-              icon,
-              color: color,
-              size: 36,
-              shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
-            ),
-          ),
+  }) => Marker(
+    point: point,
+    width: 44,
+    height: 44,
+    child: RepaintBoundary(
+      child: GestureDetector(
+        onTap: () => setState(() => _tooltip = label),
+        child: Icon(
+          icon,
+          color: color,
+          size: 36,
+          shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
         ),
-      );
+      ),
+    ),
+  );
 
   Marker _circleMarker({
     required LatLng point,
     required Color color,
     required IconData icon,
     required String label,
-  }) =>
-      Marker(
-        point: point,
-        width: 32,
-        height: 32,
-        child: GestureDetector(
-          onTap: () => setState(() => _tooltip = label),
-          child: Container(
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 3),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: 16),
-          ),
+  }) => Marker(
+    point: point,
+    width: 32,
+    height: 32,
+    child: GestureDetector(
+      onTap: () => setState(() => _tooltip = label),
+      child: Container(
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
         ),
-      );
+        child: Icon(icon, color: Colors.white, size: 16),
+      ),
+    ),
+  );
 }
 
 class _Legend extends StatelessWidget {
@@ -408,11 +399,11 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 11)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, color: color, size: 16),
+      const SizedBox(width: 4),
+      Text(label, style: const TextStyle(fontSize: 11)),
+    ],
+  );
 }

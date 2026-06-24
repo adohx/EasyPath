@@ -59,6 +59,11 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
           'approximately ${routes.first.durationLabel}. '
           'Please select a route.',
         );
+      } else {
+        _ttsService.speak(
+          'No routes could be found between these locations. '
+          'Please try again or choose a different destination.',
+        );
       }
     } catch (e) {
       setState(() {
@@ -86,8 +91,6 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Choose a Route'),
-        backgroundColor: const Color(0xFF1565C0),
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.map_outlined),
@@ -130,12 +133,13 @@ class _DestinationHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.blue[50],
+      color: colorScheme.surfaceContainerLow,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.place, color: Colors.red, size: 22),
+          Icon(Icons.place, color: colorScheme.error, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -143,15 +147,18 @@ class _DestinationHeader extends StatelessWidget {
               children: [
                 Text(
                   destination.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF0D1B2A),
+                    color: colorScheme.onSurface,
                   ),
                 ),
                 Text(
                   destination.address,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -191,14 +198,39 @@ class _RouteBody extends StatelessWidget {
           children: [
             Text(
               error!,
-              style: const TextStyle(fontSize: 16, color: Colors.red),
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
+            ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
           ],
+        ),
+      );
+    }
+    if (routes.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.signpost_outlined,
+                size: 64,
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No routes could be found between these locations.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ),
         ),
       );
     }
@@ -240,14 +272,12 @@ class _RouteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = route.accessibilitySummary;
     return Semantics(
-      label: 'Route $index: ${route.modeLabel}, ${route.durationLabel}, '
+      label:
+          'Route $index: ${route.modeLabel}, ${route.durationLabel}, '
           'accessibility score ${summary.score}',
       button: true,
       child: Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        elevation: 2,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
@@ -264,13 +294,13 @@ class _RouteCard extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1565C0),
+                        color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         'Option $index',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -352,10 +382,6 @@ class _RouteCard extends StatelessWidget {
                         icon: const Icon(Icons.chevron_right, size: 20),
                         label: const Text('View Details'),
                         onPressed: onTap,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1565C0),
-                          foregroundColor: Colors.white,
-                        ),
                       ),
                     ),
                   ],
@@ -378,7 +404,7 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = color ?? Colors.grey[700]!;
+    final textColor = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return Row(
       children: [
         Icon(icon, size: 18, color: textColor),

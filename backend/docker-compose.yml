@@ -9,16 +9,16 @@ services:
     environment:
       - MOTIS_URL=http://motis:8080
       - OVERPASS_URL=https://overpass-api.de/api/interpreter
-      - OSRM_URL=https://router.project-osrm.org
     restart: unless-stopped
-    # No depends_on: MOTIS is optional. The backend falls back to OSRM if MOTIS
-    # is unreachable. Start MOTIS separately once OSM data is ready.
+    # No depends_on: docker-compose doesn't block startup ordering on
+    # this, but MOTIS is NOT optional in practice — there is no other
+    # routing engine. If `motis` isn't running, /api/routes/plan returns
+    # zero routes (no walk-only fallback exists since OSRM was removed).
 
-  # Phase 2 optional: self-hosted routing engine.
-  # Requires an .osm.pbf file in ./motis/data/input/ (see README there).
-  # Start with: docker compose --profile routing up -d
+  # Self-hosted routing engine — required for /api/routes/plan to return
+  # anything. Needs an imported .osm.pbf + GTFS in ./motis/data/ (see
+  # README there); already imported in this repo.
   motis:
-    profiles: ["routing"]
     image: ghcr.io/motis-project/motis:latest
     container_name: ana-motis
     ports:

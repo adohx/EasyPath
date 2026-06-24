@@ -134,7 +134,7 @@ class RoutePlan {
   final List<FunctionalPoint> functionalPoints;
   final List<RiskPoint> riskPoints;
   final AccessibilitySummary accessibilitySummary;
-  // [[lat, lon], ...] polyline from OSRM/MOTIS; empty for mock routes
+  // [[lat, lon], ...] polyline from MOTIS
   final List<List<double>> geometry;
 
   const RoutePlan({

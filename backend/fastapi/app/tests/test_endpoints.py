@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from main import MOTIS_URL, NOMINATIM_URL, OSRM_URL, OVERPASS_URL
+from main import MOTIS_URL, NOMINATIM_URL, OVERPASS_URL
 
 ROUTE_REQUEST_BODY = {
     "origin": {"lat": 42.3149, "lon": -83.0364},
@@ -11,38 +11,22 @@ ROUTE_REQUEST_BODY = {
     "destination_name": "Windsor Public Library",
 }
 
-# Matches OSRM_URL/route/v1/foot/<origin_lon>,<origin_lat>;<dest_lon>,<dest_lat>
-OSRM_ROUTE_URL = (
-    f"{OSRM_URL}/route/v1/foot/-83.0364,42.3149;-83.0391,42.3192"
-)
 
-
-def _osrm_route_payload():
+def _motis_direct_walk_payload():
+    """A MOTIS "direct" (transit-free) walking connection — what MOTIS
+    returns when no transit itinerary exists for the trip."""
     return {
-        "distance": 950.4,
         "duration": 723.8,
-        "geometry": {"coordinates": [[-83.0364, 42.3149], [-83.0391, 42.3192]]},
         "legs": [
             {
+                "mode": "WALK",
+                "from": {"name": "Current Location", "lat": 42.3149, "lon": -83.0364},
+                "to": {"name": "Windsor Public Library", "lat": 42.3192, "lon": -83.0391},
+                "duration": 723.8,
+                "distance": 950.4,
                 "steps": [
-                    {
-                        "maneuver": {
-                            "type": "depart",
-                            "bearing_after": 0,
-                            "location": [-83.0364, 42.3149],
-                        },
-                        "name": "Ouellette Avenue",
-                        "distance": 950,
-                    },
-                    {
-                        "maneuver": {
-                            "type": "arrive",
-                            "location": [-83.0391, 42.3192],
-                        },
-                        "name": "",
-                        "distance": 0,
-                    },
-                ]
+                    {"relativeDirection": "DEPART", "streetName": "Ouellette Avenue", "distance": 950},
+                ],
             }
         ],
     }
@@ -90,7 +74,7 @@ def test_search_places_success(client):
 
 
 @respx.mock
-def test_search_places_empty_results_falls_back_to_mock(client):
+def test_search_places_empty_results_returns_empty_list(client):
     respx.get(f"{NOMINATIM_URL}/search").mock(
         return_value=httpx.Response(200, json=[])
     )
@@ -98,17 +82,17 @@ def test_search_places_empty_results_falls_back_to_mock(client):
     resp = client.get("/api/places/search?q=nonexistentplace")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["results"][0]["id"] == "mock_001"
+    assert data["results"] == []
 
 
 @respx.mock
-def test_search_places_request_error_falls_back_to_mock(client):
+def test_search_places_request_error_returns_empty_list(client):
     respx.get(f"{NOMINATIM_URL}/search").mock(side_effect=httpx.ConnectError("boom"))
 
     resp = client.get("/api/places/search?q=library")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["results"][0]["id"] == "mock_001"
+    assert data["results"] == []
 
 
 # ── /api/places/reverse ─────────────────────────────────────────────────────
@@ -408,42 +392,47 @@ def test_plan_route_motis_transit_transfer(client):
 
 
 @respx.mock
-def test_plan_route_falls_back_to_osrm_when_motis_unavailable(client):
+def test_plan_route_falls_back_to_motis_direct_walk_when_no_transit_itinerary(client):
     respx.post(OVERPASS_URL).mock(
         return_value=httpx.Response(200, json={"elements": []})
     )
-    respx.get(f"{MOTIS_URL}/api/v1/plan").mock(return_value=httpx.Response(500))
-    respx.get(OSRM_ROUTE_URL).mock(
-        return_value=httpx.Response(200, json={"routes": [_osrm_route_payload()]})
+    respx.get(f"{MOTIS_URL}/api/v1/plan").mock(
+        return_value=httpx.Response(
+            200,
+            json={"itineraries": [], "direct": [_motis_direct_walk_payload()]},
+        )
     )
 
     resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
     assert resp.status_code == 200
     route = resp.json()["routes"][0]
-    assert route["id"] == "osrm_route_1"
+    assert route["id"] == "motis_route_1"
+    assert route["mode"] == "walk"
     assert route["total_walking_distance_meters"] == 950
 
 
 @respx.mock
-def test_plan_route_falls_back_to_mock_when_all_sources_fail(client):
+def test_plan_route_returns_empty_when_motis_fails(client):
     respx.post(OVERPASS_URL).mock(return_value=httpx.Response(500))
     respx.get(f"{MOTIS_URL}/api/v1/plan").mock(return_value=httpx.Response(500))
-    respx.get(OSRM_ROUTE_URL).mock(return_value=httpx.Response(500))
 
     resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
     assert resp.status_code == 200
-    routes = resp.json()["routes"]
-    assert routes[0]["id"] == "mock_route_001"
+    assert resp.json()["routes"] == []
 
-    transit_route = next(r for r in routes if r["id"] == "mock_route_002")
-    assert transit_route["mode"] == "transit"
-    assert transit_route["transfer_count"] == 0
-    assert transit_route["legs"][1]["transit_info"]["route"] == "1A"
-    fp_types = [fp["type"] for fp in transit_route["functional_points"]]
-    assert "bus_board" in fp_types
-    assert "bus_alight" in fp_types
-    rp_types = [rp["type"] for rp in transit_route["risk_points"]]
-    assert "bus_risk" in rp_types
+
+@respx.mock
+def test_plan_route_returns_empty_when_motis_has_neither_itinerary_nor_direct(client):
+    respx.post(OVERPASS_URL).mock(
+        return_value=httpx.Response(200, json={"elements": []})
+    )
+    respx.get(f"{MOTIS_URL}/api/v1/plan").mock(
+        return_value=httpx.Response(200, json={"itineraries": [], "direct": []})
+    )
+
+    resp = client.post("/api/routes/plan", json=ROUTE_REQUEST_BODY)
+    assert resp.status_code == 200
+    assert resp.json()["routes"] == []
 
 
 # ── /api/exploration/nearby ──────────────────────────────────────────────────
@@ -474,7 +463,7 @@ def test_nearby_exploration_success(client):
 
 
 @respx.mock
-def test_nearby_exploration_empty_falls_back_to_mock(client):
+def test_nearby_exploration_returns_empty_categories_when_no_results(client):
     respx.post(OVERPASS_URL).mock(
         return_value=httpx.Response(200, json={"elements": []})
     )
@@ -482,14 +471,14 @@ def test_nearby_exploration_empty_falls_back_to_mock(client):
     resp = client.get("/api/exploration/nearby?lat=42.3150&lon=-83.0360")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["categories"]["restaurant"][0]["id"] == "mock_exp_001"
+    assert data["categories"] == {}
 
 
 @respx.mock
-def test_nearby_exploration_failure_falls_back_to_mock(client):
+def test_nearby_exploration_returns_empty_categories_on_failure(client):
     respx.post(OVERPASS_URL).mock(side_effect=httpx.ConnectError("boom"))
 
     resp = client.get("/api/exploration/nearby?lat=42.3150&lon=-83.0360")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["categories"]["bus_stop"][0]["id"] == "mock_exp_003"
+    assert data["categories"] == {}

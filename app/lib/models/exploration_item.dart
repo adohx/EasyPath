@@ -1,3 +1,5 @@
+import '../core/geo_utils.dart';
+
 const Map<String, String> kCategoryLabels = {
   'restaurant': 'Restaurants & Cafes',
   'pharmacy': 'Pharmacies',
@@ -7,6 +9,12 @@ const Map<String, String> kCategoryLabels = {
   'supermarket': 'Supermarkets',
   'hospital': 'Hospitals',
   'atm': 'ATMs',
+  // Personal-place-only categories (no official equivalent) — keys
+  // shared with TrackedPlaceCategory in tracked_place_category.dart.
+  'work_life': 'Work & Life',
+  'known_contacts': 'Known Contacts',
+  'hazard_detour': 'Hazard Detour',
+  'uncategorized': 'Uncategorized',
 };
 
 class ExplorationItem {
@@ -45,11 +53,7 @@ class ExplorationItem {
     return '${(distanceMeters / 1000).toStringAsFixed(1)} kilometres';
   }
 
-  String get bearingLabel {
-    const dirs = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
-    final index = ((bearingDegrees + 22.5) / 45).floor() % 8;
-    return dirs[index];
-  }
+  String get bearingLabel => compassDirectionLabel(bearingDegrees);
 
   String get ttsText =>
       '$name, approximately $distanceLabel to the $bearingLabel';

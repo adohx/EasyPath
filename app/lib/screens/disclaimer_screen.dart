@@ -1,18 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/large_button.dart';
-import 'home_screen.dart';
+import 'main_tab_screen.dart';
 
+/// Shown both as the startup safety gate and, read-only, from Settings.
 class DisclaimerScreen extends StatelessWidget {
-  const DisclaimerScreen({super.key});
+  /// When true, this is a read-only re-display from Settings: the
+  /// button just closes the screen instead of accepting and replacing
+  /// the navigation stack.
+  final bool reviewOnly;
+
+  const DisclaimerScreen({super.key, this.reviewOnly = false});
 
   Future<void> _accept(BuildContext context) async {
+    if (reviewOnly) {
+      Navigator.of(context).pop();
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('disclaimer_accepted', true);
     if (!context.mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const MainTabScreen()));
   }
 
   @override
@@ -39,7 +49,7 @@ class DisclaimerScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Accessibility Navigation Assistant · Phase 1',
+                'Accessibility Navigation Assistant',
                 style: TextStyle(color: Colors.white70, fontSize: 16),
               ),
               const SizedBox(height: 32),
@@ -51,7 +61,7 @@ class DisclaimerScreen extends StatelessWidget {
                       _DisclaimerItem(
                         icon: Icons.info_outline,
                         text:
-                            'This is a Phase 1 demo. All route and location data is simulated (mock data) for testing purposes only and does not reflect real conditions.',
+                            'This app uses real map, transit, and location data from open sources (OpenStreetMap, Transit Windsor). This data may be incomplete, outdated, or inaccurate — it does not replace checking actual conditions.',
                       ),
                       SizedBox(height: 16),
                       _DisclaimerItem(
@@ -83,11 +93,13 @@ class DisclaimerScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               LargeButton(
-                label: 'I Understand — Continue',
-                icon: Icons.check_circle_outline,
+                label: reviewOnly ? 'Close' : 'I Understand — Continue',
+                icon: reviewOnly ? Icons.close : Icons.check_circle_outline,
                 onPressed: () => _accept(context),
-                semanticLabel:
-                    'I have read the safety notice. Tap to continue to the app.',
+                semanticLabel: reviewOnly
+                    ? 'Close the safety notice.'
+                    : 'I have read the safety notice. Tap to continue '
+                          'to the app.',
               ),
             ],
           ),
@@ -114,7 +126,10 @@ class _DisclaimerItem extends StatelessWidget {
           child: Text(
             text,
             style: const TextStyle(
-                color: Colors.white, fontSize: 16, height: 1.5),
+              color: Colors.white,
+              fontSize: 16,
+              height: 1.5,
+            ),
           ),
         ),
       ],

@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from typing import Optional
@@ -7,9 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 MOTIS_URL = os.getenv("MOTIS_URL", "http://motis:8080")
 OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
-OSRM_URL = os.getenv("OSRM_URL", "https://router.project-osrm.org")
 NOMINATIM_URL = "https://nominatim.openstreetmap.org"
 USER_AGENT = "AccessibilityNavigationAssistant/2.0"
 
@@ -154,45 +156,6 @@ def _overpass_to_categories(
     return groups
 
 
-# ── OSRM route parsing ──────────────────────────────────────────────────────────
-
-_MODIFIER_TO_WORD = {
-    "left": "left", "right": "right",
-    "sharp left": "sharp left", "sharp right": "sharp right",
-    "slight left": "slightly left", "slight right": "slightly right",
-    "straight": "straight ahead", "uturn": "U-turn",
-}
-
-
-def _osrm_step_instruction(step: dict) -> str:
-    maneuver = step.get("maneuver", {})
-    mtype = maneuver.get("type", "")
-    modifier = maneuver.get("modifier", "")
-    name = step.get("name") or "the road"
-    dist = round(step.get("distance", 0))
-
-    if mtype == "depart":
-        direction = _abs_direction(maneuver.get("bearing_after", 0))
-        return f"Head {direction} on {name}" + (f" for {dist} metres" if dist else "")
-    if mtype == "arrive":
-        return "Arrive at your destination"
-    if mtype in ("turn", "new name", "continue"):
-        word = _MODIFIER_TO_WORD.get(modifier, modifier)
-        if word == "straight ahead":
-            return f"Continue straight on {name}" + (f" for {dist} metres" if dist else "")
-        return f"Turn {word} onto {name}"
-    if mtype == "roundabout":
-        exit_n = maneuver.get("exit", 1)
-        return f"At the roundabout, take exit {exit_n} onto {name}"
-    return f"Continue on {name}"
-
-
-def _abs_direction(bearing: float) -> str:
-    dirs = ["north", "northeast", "east", "southeast",
-            "south", "southwest", "west", "northwest"]
-    return dirs[round(bearing / 45) % 8]
-
-
 # ── MOTIS step parsing ──────────────────────────────────────────────────────────
 
 _MOTIS_DIRECTION_PHRASES = {
@@ -234,131 +197,29 @@ def _motis_step_instruction(step: dict) -> str:
     return f"{inst} for {dist} metres" if dist else inst
 
 
-def _osrm_to_route(
-    osrm_route: dict,
-    route_id: str,
-    origin_lat: float, origin_lon: float,
-    dest_lat: float, dest_lon: float,
-    origin_name: str, dest_name: str,
-    traffic_signal_positions: list[tuple[float, float]],
-) -> dict:
-    legs = osrm_route.get("legs", [])
-    steps = legs[0].get("steps", []) if legs else []
-
-    total_distance = round(osrm_route.get("distance", 0))
-    total_duration = round(osrm_route.get("duration", 0))
-
-    # Extract polyline geometry: OSRM returns [lon, lat], convert to [lat, lon]
-    geojson_coords = osrm_route.get("geometry", {}).get("coordinates", [])
-    geometry = [[c[1], c[0]] for c in geojson_coords]
-
-    # Build navigation steps
-    nav_steps = []
-    for s in steps:
-        inst = _osrm_step_instruction(s)
-        nav_steps.append({
-            "instruction": inst,
-            "distance_meters": round(s.get("distance", 0)),
-        })
-
-    # Build a single walking leg
-    built_legs = [
-        {
-            "id": f"{route_id}_leg_1",
-            "mode": "walk",
-            "from": {"name": origin_name, "coordinates": {"lat": origin_lat, "lon": origin_lon}},
-            "to": {"name": dest_name, "coordinates": {"lat": dest_lat, "lon": dest_lon}},
-            "duration_seconds": total_duration,
-            "distance_meters": total_distance,
-            "steps": nav_steps,
-        }
-    ]
-
-    # Functional points: significant turns + destination entrance
-    functional_points = []
-    fp_idx = 1
-    for s in steps:
-        maneuver = s.get("maneuver", {})
-        mtype = maneuver.get("type", "")
-        modifier = maneuver.get("modifier", "")
-        loc = maneuver.get("location", [origin_lon, origin_lat])
-        lat, lon = loc[1], loc[0]
-
-        if mtype == "arrive":
-            functional_points.append({
-                "id": f"{route_id}_fp_{fp_idx}",
-                "type": "building_entrance",
-                "description": f"{dest_name} — destination",
-                "importance": "navigation",
-                "trigger_distance_meters": 40,
-                "coordinates": {"lat": dest_lat, "lon": dest_lon},
-            })
-            fp_idx += 1
-        elif mtype == "turn" and modifier in ("left", "right", "sharp left", "sharp right"):
-            name = s.get("name") or "intersection"
-            functional_points.append({
-                "id": f"{route_id}_fp_{fp_idx}",
-                "type": "turn",
-                "description": f"Turn {_MODIFIER_TO_WORD.get(modifier, modifier)} onto {name}",
-                "importance": "navigation",
-                "trigger_distance_meters": 30,
-                "coordinates": {"lat": lat, "lon": lon},
-            })
-            fp_idx += 1
-
-    # Risk points: turns near known traffic signals → medium; other significant turns → low
-    risk_points = []
-    rp_idx = 1
-    for s in steps:
-        maneuver = s.get("maneuver", {})
-        mtype = maneuver.get("type", "")
-        modifier = maneuver.get("modifier", "")
-        if mtype not in ("turn", "new name") or modifier == "straight":
-            continue
-        loc = maneuver.get("location", [origin_lon, origin_lat])
-        lat, lon = loc[1], loc[0]
-        name = s.get("name") or "intersection"
-
-        has_signal = any(
-            _haversine(lat, lon, slat, slon) < 60
-            for slat, slon in traffic_signal_positions
-        )
-        risk_points.append({
-            "id": f"{route_id}_rp_{rp_idx}",
-            "type": "intersection",
-            "description": f"{'Signalised intersection' if has_signal else 'Intersection'} at {name}",
-            "severity": "medium" if has_signal else "low",
-            "trigger_distance_meters": 100 if has_signal else 80,
-            "coordinates": {"lat": lat, "lon": lon},
-        })
-        rp_idx += 1
-
-    # Accessibility score: starts at 85, minus 5 per medium risk, minus 2 per low risk
-    medium_count = sum(1 for r in risk_points if r["severity"] == "medium")
-    low_count = sum(1 for r in risk_points if r["severity"] == "low")
-    score = max(30, 85 - medium_count * 5 - low_count * 2)
-
-    return {
-        "id": route_id,
-        "mode": "walk",
-        "total_duration_seconds": total_duration,
-        "total_walking_distance_meters": total_distance,
-        "transfer_count": 0,
-        "legs": built_legs,
-        "geometry": geometry,
-        "functional_points": functional_points,
-        "risk_points": risk_points,
-        "accessibility_summary": {
-            "score": score,
-            "street_crossings": medium_count + low_count,
-            "transfer_count": 0,
-            "known_entrances": 1,
-            "audible_signals": medium_count,
-            "construction_alerts": 0,
-            "walking_distance_meters": total_distance,
-            "data_complete": True,
-        },
-    }
+def _merge_motis_steps(steps: list[dict]) -> list[dict]:
+    """Collapses consecutive plain "CONTINUE" MOTIS walking-leg steps
+    (no real turn — just an underlying way-segment or street-name
+    boundary) into one step with the combined distance, so a single
+    straight stretch doesn't turn into a string of repeated
+    announcements. Real manoeuvres are never merged.
+    """
+    merged: list[dict] = []
+    for step in steps:
+        direction = str(step.get("relativeDirection") or "CONTINUE").upper()
+        is_plain = direction == "CONTINUE"
+        if is_plain and merged and merged[-1]["_plain"]:
+            prev = merged[-1]
+            prev["distance"] = (prev.get("distance") or 0) + (step.get("distance") or 0)
+            if prev.get("streetName") != step.get("streetName"):
+                prev["streetName"] = ""
+        else:
+            copy = dict(step)
+            copy["_plain"] = is_plain
+            merged.append(copy)
+    for step in merged:
+        step.pop("_plain", None)
+    return merged
 
 
 # ── Overpass: fetch traffic signals in bounding box ─────────────────────────────
@@ -374,12 +235,20 @@ async def _fetch_traffic_signals(
     )
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.post(OVERPASS_URL, data={"data": query}, timeout=15.0)
+            resp = await client.post(
+                OVERPASS_URL,
+                data={"data": query},
+                headers={"User-Agent": USER_AGENT},
+                timeout=15.0,
+            )
             if resp.status_code == 200:
                 elements = resp.json().get("elements", [])
                 return [(el["lat"], el["lon"]) for el in elements if el.get("type") == "node"]
+            logger.warning(
+                "Overpass traffic-signal query returned status %s", resp.status_code
+            )
     except Exception:
-        pass
+        logger.exception("Overpass traffic-signal query failed")
     return []
 
 
@@ -403,7 +272,7 @@ async def search_places(q: str):
                     "q": q,
                     "format": "jsonv2",
                     "countrycodes": "ca",
-                    "limit": 6,
+                    "limit": 20,
                     "viewbox": f"{WINDSOR_BBOX[0]},{WINDSOR_BBOX[3]},{WINDSOR_BBOX[2]},{WINDSOR_BBOX[1]}",
                     "bounded": 1,
                     "addressdetails": 1,
@@ -434,11 +303,12 @@ async def search_places(q: str):
                         "type": item.get("type", "place"),
                     })
                 return {"query": q, "results": results}
+        else:
+            logger.warning("Nominatim search returned status %s", resp.status_code)
     except Exception:
-        pass
+        logger.exception("Nominatim search failed")
 
-    # Fallback mock
-    return {"query": q, "results": _mock_places()}
+    return {"query": q, "results": []}
 
 
 @app.get("/api/places/reverse")
@@ -473,8 +343,9 @@ async def reverse_geocode(lat: float, lon: float):
 @app.post("/api/routes/plan")
 async def plan_route(body: RoutePlanRequest):
     """
-    Route planning: tries MOTIS first, then OSRM public demo, then mock.
-    Automatically extracts functional points and risk points.
+    Route planning via MOTIS (self-hosted): transit+walk itineraries when
+    a transit option exists, otherwise its own transit-free walking
+    connection. Automatically extracts functional points and risk points.
     """
     origin = body.origin
     dest = body.destination
@@ -490,18 +361,14 @@ async def plan_route(body: RoutePlanRequest):
     max_lon = max(olon, dlon) + 0.005
     signals = await _fetch_traffic_signals(min_lat, min_lon, max_lat, max_lon)
 
-    # 1. Try MOTIS
     motis_routes = await _plan_via_motis(olat, olon, dlat, dlon, oname, dname, signals)
     if motis_routes:
         return {"routes": motis_routes}
 
-    # 2. Try OSRM public demo server (foot profile)
-    osrm_routes = await _plan_via_osrm(olat, olon, dlat, dlon, oname, dname, signals)
-    if osrm_routes:
-        return {"routes": osrm_routes}
-
-    # 3. Fallback mock
-    return {"routes": _mock_routes()}
+    # MOTIS unreachable or found neither a transit itinerary nor a
+    # transit-free walking connection — be honest about it rather than
+    # fabricating a route.
+    return {"routes": []}
 
 
 def _transit_functional_points(route_id, legs_out, dname, dlat, dlon) -> list:
@@ -554,6 +421,121 @@ def _transit_functional_points(route_id, legs_out, dname, dlat, dlon) -> list:
     return points
 
 
+def _motis_itinerary_to_route(
+    itin, route_id, oname, dname, olat, olon, dlat, dlon, signals
+) -> dict:
+    """Builds one route dict from a single MOTIS itinerary — used for
+    both real transit itineraries (`data["itineraries"]`) and the
+    transit-free walking connection MOTIS returns under `data["direct"]`
+    when requesting mode=TRANSIT,WALK and no transit option exists.
+    """
+    legs_out = []
+    geometry: list[list[float]] = []
+    transit_leg_count = 0
+    total_walk_distance = 0
+    for leg in itin.get("legs", []):
+        leg_geometry = leg.get("legGeometry") or {}
+        if leg_geometry.get("points"):
+            geometry.extend(
+                _decode_polyline(
+                    leg_geometry["points"],
+                    leg_geometry.get("precision", 5),
+                )
+            )
+
+        leg_steps = []
+        for step in _merge_motis_steps(leg.get("steps", [])):
+            dist = round(step.get("distance") or 0)
+            leg_steps.append({
+                "instruction": _motis_step_instruction(step),
+                "distance_meters": dist,
+            })
+
+        leg_mode = "walk" if leg.get("mode", "WALK") == "WALK" else "bus"
+        if leg_mode == "bus":
+            transit_leg_count += 1
+        else:
+            total_walk_distance += round(leg.get("distance", 0))
+
+        leg_out = {
+            "id": f"{route_id}_leg_{len(legs_out) + 1}",
+            "mode": leg_mode,
+            "from": {
+                "name": leg.get("from", {}).get("name", oname),
+                "coordinates": {
+                    "lat": leg.get("from", {}).get("lat", olat),
+                    "lon": leg.get("from", {}).get("lon", olon),
+                },
+            },
+            "to": {
+                "name": leg.get("to", {}).get("name", dname),
+                "coordinates": {
+                    "lat": leg.get("to", {}).get("lat", dlat),
+                    "lon": leg.get("to", {}).get("lon", dlon),
+                },
+            },
+            "duration_seconds": round(leg.get("duration", 0)),
+            "distance_meters": round(leg.get("distance", 0)),
+            "steps": leg_steps,
+        }
+        if leg_mode == "bus":
+            leg_out["transit_info"] = {
+                "route": leg.get("routeShortName", ""),
+                "headsign": leg.get("headsign", ""),
+                "agency": leg.get("agencyName", ""),
+                "scheduled": not leg.get("realTime", False),
+            }
+        legs_out.append(leg_out)
+
+    total_dur = round(itin.get("duration", 0))
+    total_dist = total_walk_distance
+    transfer_count = max(0, transit_leg_count - 1)
+    route_mode = "transit" if transit_leg_count > 0 else "walk"
+    risk_points = [
+        {
+            "id": f"{route_id}_rp_{i + 1}",
+            "type": "intersection",
+            "description": "Signalised intersection",
+            "severity": "medium",
+            "trigger_distance_meters": 100,
+            "coordinates": {"lat": slat, "lon": slon},
+        }
+        for i, (slat, slon) in enumerate(signals[:5])
+    ]
+    # Accessibility score: starts at 85, then subtracts per-route
+    # penalties so different itineraries for the same request are
+    # distinguishable — 3 points per street crossing, 8 per
+    # transfer, and 1 per 200 metres of walking.
+    crossing_count = len(risk_points)
+    score = max(30, 85
+                 - crossing_count * 3
+                 - transfer_count * 8
+                 - round(total_dist / 200))
+    return {
+        "id": route_id,
+        "mode": route_mode,
+        "total_duration_seconds": total_dur,
+        "total_walking_distance_meters": total_dist,
+        "transfer_count": transfer_count,
+        "geometry": geometry,
+        "legs": legs_out,
+        "functional_points": _transit_functional_points(
+            route_id, legs_out, dname, dlat, dlon
+        ),
+        "risk_points": risk_points,
+        "accessibility_summary": {
+            "score": score,
+            "street_crossings": crossing_count,
+            "transfer_count": transfer_count,
+            "known_entrances": 1,
+            "audible_signals": crossing_count,
+            "construction_alerts": 0,
+            "walking_distance_meters": total_dist,
+            "data_complete": True,
+        },
+    }
+
+
 async def _plan_via_motis(
     olat, olon, dlat, dlon, oname, dname, signals
 ) -> list:
@@ -572,161 +554,30 @@ async def _plan_via_motis(
         if resp.status_code != 200:
             return []
         data = resp.json()
+
         itineraries = data.get("itineraries", [])
-        if not itineraries:
-            return []
-
-        results = []
-        for idx, itin in enumerate(itineraries[:2]):
-            route_id = f"motis_route_{idx + 1}"
-            legs_out = []
-            all_steps = []
-            geometry: list[list[float]] = []
-            transit_leg_count = 0
-            total_walk_distance = 0
-            for leg in itin.get("legs", []):
-                leg_geometry = leg.get("legGeometry") or {}
-                if leg_geometry.get("points"):
-                    geometry.extend(
-                        _decode_polyline(
-                            leg_geometry["points"],
-                            leg_geometry.get("precision", 5),
-                        )
-                    )
-
-                leg_steps = []
-                for step in leg.get("steps", []):
-                    dist = round(step.get("distance") or 0)
-                    leg_steps.append({
-                        "instruction": _motis_step_instruction(step),
-                        "distance_meters": dist,
-                    })
-                    all_steps.append(step)
-
-                leg_mode = "walk" if leg.get("mode", "WALK") == "WALK" else "bus"
-                if leg_mode == "bus":
-                    transit_leg_count += 1
-                else:
-                    total_walk_distance += round(leg.get("distance", 0))
-
-                leg_out = {
-                    "id": f"{route_id}_leg_{len(legs_out) + 1}",
-                    "mode": leg_mode,
-                    "from": {
-                        "name": leg.get("from", {}).get("name", oname),
-                        "coordinates": {
-                            "lat": leg.get("from", {}).get("lat", olat),
-                            "lon": leg.get("from", {}).get("lon", olon),
-                        },
-                    },
-                    "to": {
-                        "name": leg.get("to", {}).get("name", dname),
-                        "coordinates": {
-                            "lat": leg.get("to", {}).get("lat", dlat),
-                            "lon": leg.get("to", {}).get("lon", dlon),
-                        },
-                    },
-                    "duration_seconds": round(leg.get("duration", 0)),
-                    "distance_meters": round(leg.get("distance", 0)),
-                    "steps": leg_steps,
-                }
-                if leg_mode == "bus":
-                    leg_out["transit_info"] = {
-                        "route": leg.get("routeShortName", ""),
-                        "headsign": leg.get("headsign", ""),
-                        "agency": leg.get("agencyName", ""),
-                        "scheduled": not leg.get("realTime", False),
-                    }
-                legs_out.append(leg_out)
-
-            total_dur = round(itin.get("duration", 0))
-            total_dist = total_walk_distance
-            transfer_count = max(0, transit_leg_count - 1)
-            route_mode = "transit" if transit_leg_count > 0 else "walk"
-            risk_points = [
-                {
-                    "id": f"{route_id}_rp_{i + 1}",
-                    "type": "intersection",
-                    "description": "Signalised intersection",
-                    "severity": "medium",
-                    "trigger_distance_meters": 100,
-                    "coordinates": {"lat": slat, "lon": slon},
-                }
-                for i, (slat, slon) in enumerate(signals[:5])
-            ]
-            # Accessibility score: starts at 85, then subtracts per-route
-            # penalties so different itineraries for the same request are
-            # distinguishable — 3 points per street crossing, 8 per
-            # transfer, and 1 per 200 metres of walking.
-            crossing_count = len(risk_points)
-            score = max(30, 85
-                         - crossing_count * 3
-                         - transfer_count * 8
-                         - round(total_dist / 200))
-            results.append({
-                "id": route_id,
-                "mode": route_mode,
-                "total_duration_seconds": total_dur,
-                "total_walking_distance_meters": total_dist,
-                "transfer_count": transfer_count,
-                "geometry": geometry,
-                "legs": legs_out,
-                "functional_points": _transit_functional_points(
-                    route_id, legs_out, dname, dlat, dlon
-                ),
-                "risk_points": risk_points,
-                "accessibility_summary": {
-                    "score": score,
-                    "street_crossings": crossing_count,
-                    "transfer_count": transfer_count,
-                    "known_entrances": 1,
-                    "audible_signals": crossing_count,
-                    "construction_alerts": 0,
-                    "walking_distance_meters": total_dist,
-                    "data_complete": True,
-                },
-            })
-        return results
-    except Exception:
-        return []
-
-
-async def _plan_via_osrm(
-    olat, olon, dlat, dlon, oname, dname, signals
-) -> list:
-    """Walking route from OSRM public demo server."""
-    try:
-        url = f"{OSRM_URL}/route/v1/foot/{olon},{olat};{dlon},{dlat}"
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                url,
-                params={
-                    "steps": "true",
-                    "overview": "full",
-                    "geometries": "geojson",
-                    "annotations": "false",
-                    "alternatives": "false",
-                },
-                timeout=10.0,
-            )
-        if resp.status_code != 200:
-            return []
-        data = resp.json()
-        osrm_routes = data.get("routes", [])
-        if not osrm_routes:
-            return []
-
-        results = []
-        for idx, r in enumerate(osrm_routes[:2]):
-            route_id = f"osrm_route_{idx + 1}"
-            results.append(
-                _osrm_to_route(
-                    r, route_id,
-                    olat, olon, dlat, dlon,
-                    oname, dname, signals,
+        if itineraries:
+            return [
+                _motis_itinerary_to_route(
+                    itin, f"motis_route_{idx + 1}",
+                    oname, dname, olat, olon, dlat, dlon, signals,
                 )
+                for idx, itin in enumerate(itineraries[:2])
+            ]
+
+        # No transit itinerary exists for this trip — MOTIS still
+        # returns a transit-free walking connection under "direct"
+        # (computed from the same self-hosted street network used for
+        # transit routing), so there is no need for a separate walking
+        # router/service as a fallback.
+        direct = data.get("direct", [])
+        return [
+            _motis_itinerary_to_route(
+                conn, f"motis_route_{idx + 1}",
+                oname, dname, olat, olon, dlat, dlon, signals,
             )
-        return results
+            for idx, conn in enumerate(direct[:2])
+        ]
     except Exception:
         return []
 
@@ -750,223 +601,31 @@ async def nearby_exploration(lat: float, lon: float, radius_meters: int = 300):
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                OVERPASS_URL, data={"data": query}, timeout=20.0
+                OVERPASS_URL,
+                data={"data": query},
+                headers={"User-Agent": USER_AGENT},
+                timeout=20.0,
             )
         if resp.status_code == 200:
             elements = resp.json().get("elements", [])
-            if elements:
-                categories = _overpass_to_categories(elements, lat, lon)
-                return {
-                    "center": {"lat": lat, "lon": lon},
-                    "radius_meters": radius_meters,
-                    "categories": categories,
-                }
+            return {
+                "center": {"lat": lat, "lon": lon},
+                "radius_meters": radius_meters,
+                # Empty is a legitimate result (no POIs in range) — still
+                # real data, not a failure.
+                "categories": _overpass_to_categories(elements, lat, lon),
+            }
+        logger.warning(
+            "Overpass exploration query returned status %s", resp.status_code
+        )
     except Exception:
-        pass
+        logger.exception("Overpass exploration query failed")
 
-    # Fallback mock
+    # The query itself failed (not just "no results") — be honest about
+    # it rather than fabricating places.
     return {
         "center": {"lat": lat, "lon": lon},
         "radius_meters": radius_meters,
-        "categories": _mock_exploration_categories(lat, lon),
+        "categories": {},
     }
 
-
-# ── Fallback mock data ──────────────────────────────────────────────────────────
-
-def _mock_places() -> list:
-    return [
-        {
-            "id": "mock_001",
-            "name": "Windsor Public Library",
-            "address": "850 Ouellette Avenue, Windsor, ON",
-            "coordinates": {"lat": 42.3192, "lon": -83.0391},
-            "type": "library",
-        },
-        {
-            "id": "mock_002",
-            "name": "Windsor Regional Hospital",
-            "address": "1995 Lens Avenue, Windsor, ON",
-            "coordinates": {"lat": 42.2800, "lon": -83.0050},
-            "type": "hospital",
-        },
-    ]
-
-
-def _mock_routes() -> list:
-    return [
-        {
-            "id": "mock_route_001",
-            "mode": "walk",
-            "total_duration_seconds": 1200,
-            "total_walking_distance_meters": 900,
-            "transfer_count": 0,
-            "legs": [
-                {
-                    "id": "mock_leg_001",
-                    "mode": "walk",
-                    "from": {"name": "Current Location", "coordinates": {"lat": 42.3150, "lon": -83.0360}},
-                    "to": {"name": "Windsor Public Library", "coordinates": {"lat": 42.3192, "lon": -83.0391}},
-                    "duration_seconds": 1200,
-                    "distance_meters": 900,
-                    "steps": [
-                        {"instruction": "Head north on Ouellette Avenue for 300 metres", "distance_meters": 300},
-                        {"instruction": "Continue north past Wyandotte Street intersection", "distance_meters": 400},
-                        {"instruction": "Turn left — the library entrance is on your left", "distance_meters": 200},
-                    ],
-                }
-            ],
-            "functional_points": [
-                {
-                    "id": "mock_fp_001",
-                    "type": "building_entrance",
-                    "description": "Windsor Public Library — main entrance",
-                    "importance": "navigation",
-                    "trigger_distance_meters": 40,
-                    "coordinates": {"lat": 42.3192, "lon": -83.0391},
-                }
-            ],
-            "risk_points": [
-                {
-                    "id": "mock_rp_001",
-                    "type": "intersection",
-                    "description": "Ouellette Ave at Wyandotte St — busy intersection",
-                    "severity": "medium",
-                    "trigger_distance_meters": 100,
-                    "coordinates": {"lat": 42.3170, "lon": -83.0370},
-                }
-            ],
-            "accessibility_summary": {
-                "score": 78,
-                "street_crossings": 2,
-                "transfer_count": 0,
-                "known_entrances": 1,
-                "audible_signals": 1,
-                "construction_alerts": 0,
-                "walking_distance_meters": 900,
-                "data_complete": False,
-            },
-        },
-        {
-            "id": "mock_route_002",
-            "mode": "transit",
-            "total_duration_seconds": 1680,
-            "total_walking_distance_meters": 450,
-            "transfer_count": 0,
-            "legs": [
-                {
-                    "id": "mock_leg_101",
-                    "mode": "walk",
-                    "from": {"name": "Current Location", "coordinates": {"lat": 42.3150, "lon": -83.0360}},
-                    "to": {"name": "Ouellette Ave at Wyandotte St", "coordinates": {"lat": 42.3170, "lon": -83.0370}},
-                    "duration_seconds": 180,
-                    "distance_meters": 250,
-                    "steps": [
-                        {"instruction": "Head north on Ouellette Avenue for 250 metres", "distance_meters": 250},
-                    ],
-                },
-                {
-                    "id": "mock_leg_102",
-                    "mode": "bus",
-                    "from": {"name": "Ouellette Ave at Wyandotte St", "coordinates": {"lat": 42.3170, "lon": -83.0370}},
-                    "to": {"name": "Ouellette Ave at Elliott St", "coordinates": {"lat": 42.3190, "lon": -83.0385}},
-                    "duration_seconds": 1200,
-                    "distance_meters": 2100,
-                    "steps": [
-                        {"instruction": "Board Route 1A bus towards Downtown at Ouellette Ave / Wyandotte St", "distance_meters": 0},
-                        {"instruction": "Ride approximately 2.1 kilometres to Ouellette Ave / Elliott St", "distance_meters": 2100},
-                        {"instruction": "Alight here — this is your stop at Ouellette Ave / Elliott St", "distance_meters": 0},
-                    ],
-                    "transit_info": {
-                        "route": "1A",
-                        "headsign": "Downtown",
-                        "agency": "Transit Windsor",
-                        "scheduled": True,
-                    },
-                },
-                {
-                    "id": "mock_leg_103",
-                    "mode": "walk",
-                    "from": {"name": "Ouellette Ave at Elliott St", "coordinates": {"lat": 42.3190, "lon": -83.0385}},
-                    "to": {"name": "Windsor Public Library", "coordinates": {"lat": 42.3192, "lon": -83.0391}},
-                    "duration_seconds": 300,
-                    "distance_meters": 200,
-                    "steps": [
-                        {"instruction": "Walk north on Ouellette Avenue for 120 metres", "distance_meters": 120},
-                        {"instruction": "Turn left — the library entrance appears to be on your left", "distance_meters": 80},
-                    ],
-                },
-            ],
-            "functional_points": [
-                {
-                    "id": "mock_fp_101",
-                    "type": "bus_board",
-                    "description": "Board Route 1A bus at Ouellette Ave / Wyandotte St",
-                    "importance": "required",
-                    "trigger_distance_meters": 80,
-                    "coordinates": {"lat": 42.3170, "lon": -83.0370},
-                },
-                {
-                    "id": "mock_fp_102",
-                    "type": "bus_alight",
-                    "description": "Alight at Ouellette Ave / Elliott St",
-                    "importance": "required",
-                    "trigger_distance_meters": 80,
-                    "coordinates": {"lat": 42.3190, "lon": -83.0385},
-                },
-                {
-                    "id": "mock_fp_103",
-                    "type": "building_entrance",
-                    "description": "Windsor Public Library — main entrance",
-                    "importance": "navigation",
-                    "trigger_distance_meters": 40,
-                    "coordinates": {"lat": 42.3192, "lon": -83.0391},
-                },
-            ],
-            "risk_points": [
-                {
-                    "id": "mock_rp_101",
-                    "type": "intersection",
-                    "description": "Ouellette Ave at Wyandotte St — busy intersection, audible pedestrian signal may be present",
-                    "severity": "medium",
-                    "trigger_distance_meters": 100,
-                    "coordinates": {"lat": 42.3170, "lon": -83.0370},
-                },
-                {
-                    "id": "mock_rp_102",
-                    "type": "bus_risk",
-                    "description": "Temporary stop relocation — Ouellette Ave at Elliott St",
-                    "severity": "medium",
-                    "trigger_distance_meters": 150,
-                    "coordinates": {"lat": 42.3190, "lon": -83.0385},
-                },
-            ],
-            "accessibility_summary": {
-                "score": 78,
-                "street_crossings": 2,
-                "transfer_count": 0,
-                "known_entrances": 1,
-                "audible_signals": 1,
-                "construction_alerts": 0,
-                "walking_distance_meters": 450,
-                "data_complete": True,
-            },
-        },
-    ]
-
-
-def _mock_exploration_categories(lat: float, lon: float) -> dict:
-    return {
-        "restaurant": [
-            {"id": "mock_exp_001", "name": "Cafe Ambrosia", "distance_meters": 50,
-             "bearing_degrees": 45, "coordinates": {"lat": lat + 0.0003, "lon": lon + 0.0003}},
-        ],
-        "pharmacy": [
-            {"id": "mock_exp_002", "name": "Shoppers Drug Mart", "distance_meters": 120,
-             "bearing_degrees": 270, "coordinates": {"lat": lat, "lon": lon - 0.001}},
-        ],
-        "bus_stop": [
-            {"id": "mock_exp_003", "name": "Ouellette Ave at Elliott St", "distance_meters": 60,
-             "bearing_degrees": 0, "coordinates": {"lat": lat + 0.0004, "lon": lon}},
-        ],
-    }

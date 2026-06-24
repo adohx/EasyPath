@@ -1,16 +1,15 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import '../core/place_icons.dart';
 import '../models/place.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../services/voice_service.dart';
 import '../services/accessibility_focus_service.dart';
 import '../services/location_service.dart';
-import '../widgets/large_button.dart';
-import 'route_selection_screen.dart';
-import 'exploration_screen.dart';
 import 'debug_map_screen.dart';
+import 'place_detail_screen.dart';
 
 enum _SortOrder { distanceAsc, distanceDesc, nameAsc }
 
@@ -43,7 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final lat2 = place.lat * pi / 180;
     final dLat = (place.lat - _selectedOrigin!.lat) * pi / 180;
     final dLon = (place.lon - _selectedOrigin!.lon) * pi / 180;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
     return 2 * earthRadiusMeters * atan2(sqrt(a), sqrt(1 - a));
   }
@@ -118,27 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _search(text);
   }
 
-  void _selectDestination(Place destination) {
-    if (_selectedOrigin == null) return;
-    _ttsService.speak(
-      'Destination: ${destination.name}. Planning route, please wait.',
-    );
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RouteSelectionScreen(
-          origin: _selectedOrigin!,
-          destination: destination,
-        ),
-      ),
-    );
-  }
-
-  void _openExploration(Place place) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExplorationScreen(centerPlace: place),
-      ),
-    );
+  void _openPlaceDetail(Place place) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => PlaceDetailScreen(place: place)));
   }
 
   @override
@@ -150,11 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Accessibility Navigator'),
-        backgroundColor: const Color(0xFF1565C0),
-        foregroundColor: Colors.white,
+        title: const Text('Search'),
         actions: [
           IconButton(
             icon: const Icon(Icons.map_outlined),
@@ -162,25 +142,13 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _selectedOrigin == null
                 ? null
                 : () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => DebugMapScreen(
-                          origin: _selectedOrigin!,
-                          extraPlaces: _results,
-                        ),
+                    MaterialPageRoute(
+                      builder: (_) => DebugMapScreen(
+                        origin: _selectedOrigin!,
+                        extraPlaces: _results,
                       ),
                     ),
-          ),
-          // ExcludeSemantics so TalkBack skips this button on initial focus.
-          // TalkBack users reach exploration via the hint body button instead,
-          // which is always reachable without an accidental first-focus grab.
-          ExcludeSemantics(
-            child: IconButton(
-              icon: const Icon(Icons.explore),
-              tooltip: 'Explore nearby',
-              onPressed: _selectedOrigin == null
-                  ? null
-                  : () => _openExploration(_selectedOrigin!),
-            ),
+                  ),
           ),
         ],
       ),
@@ -193,10 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onMicTap: _startListening,
             onChanged: () => setState(() {}),
           ),
-          _OriginBar(
-            isLocating: _locating,
-            originName: _selectedOrigin?.name,
-          ),
+          _OriginBar(isLocating: _locating, originName: _selectedOrigin?.name),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(24),
@@ -210,21 +175,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 distanceTo: _distanceTo,
                 formatDistance: _formatDistance,
                 resultsStatusKey: _resultsStatusKey,
-                onSortChanged: (order) =>
-                    setState(() => _sortOrder = order),
-                onSelectDestination: _selectDestination,
-                onExplore: _openExploration,
+                onSortChanged: (order) => setState(() => _sortOrder = order),
+                onOpenDetail: _openPlaceDetail,
               ),
             )
           else
-            Expanded(
-              child: _HintView(
-                canExplore: _selectedOrigin != null,
-                onExplore: _selectedOrigin == null
-                    ? null
-                    : () => _openExploration(_selectedOrigin!),
-              ),
-            ),
+            const Expanded(child: _HintView()),
         ],
       ),
     );
@@ -239,36 +195,44 @@ class _OriginBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.blue[50],
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          if (isLocating)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            const Icon(
-              Icons.my_location,
-              color: Color(0xFF1565C0),
-              size: 20,
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: colorScheme.primaryContainer,
+              child: isLocating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.my_location,
+                      color: colorScheme.onPrimaryContainer,
+                      size: 16,
+                    ),
             ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              isLocating
-                  ? 'Acquiring location…'
-                  : 'From: ${originName ?? "Unknown"}',
-              style: const TextStyle(
-                fontSize: 15,
-                color: Color(0xFF1565C0),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isLocating
+                    ? 'Acquiring location…'
+                    : 'From: ${originName ?? "Unknown"}',
+                style: TextStyle(fontSize: 15, color: colorScheme.onSurface),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -291,9 +255,11 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Semantics(
@@ -306,22 +272,8 @@ class _SearchBar extends StatelessWidget {
                 style: const TextStyle(fontSize: 18),
                 decoration: InputDecoration(
                   hintText: 'Enter destination',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF1565C0),
-                      width: 2,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF1565C0),
-                      width: 2,
-                    ),
-                  ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
+                    horizontal: 18,
                     vertical: 18,
                   ),
                   suffixIcon: controller.text.isNotEmpty
@@ -340,52 +292,46 @@ class _SearchBar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           // sortKey(1): TalkBack reaches mic button first among search elements
           Semantics(
             sortKey: const OrdinalSortKey(1),
             label: isListening ? 'Stop listening' : 'Tap to speak',
             button: true,
-            child: SizedBox(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
               width: 64,
               height: 64,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: isListening
+                    ? [
+                        BoxShadow(
+                          color: colorScheme.error.withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : [],
+              ),
               child: ElevatedButton(
                 onPressed: isListening ? null : onMicTap,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isListening
-                      ? Colors.red[600]
-                      : const Color(0xFF1565C0),
+                      ? colorScheme.error
+                      : colorScheme.primary,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   padding: EdgeInsets.zero,
                 ),
                 child: Icon(
                   isListening ? Icons.mic : Icons.mic_none,
-                  color: Colors.white,
+                  color: isListening
+                      ? colorScheme.onError
+                      : colorScheme.onPrimary,
                   size: 32,
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Semantics(
-            sortKey: const OrdinalSortKey(3),
-            label: 'Search',
-            button: true,
-            child: SizedBox(
-              width: 64,
-              height: 64,
-              child: ElevatedButton(
-                onPressed: () => onSearch(controller.text),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1565C0),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: EdgeInsets.zero,
-                ),
-                child: const Icon(Icons.search, color: Colors.white, size: 32),
               ),
             ),
           ),
@@ -402,8 +348,7 @@ class _ResultsList extends StatelessWidget {
   final String Function(double) formatDistance;
   final GlobalKey resultsStatusKey;
   final void Function(_SortOrder) onSortChanged;
-  final void Function(Place) onSelectDestination;
-  final void Function(Place) onExplore;
+  final void Function(Place) onOpenDetail;
 
   const _ResultsList({
     required this.sortedPlaces,
@@ -412,12 +357,12 @@ class _ResultsList extends StatelessWidget {
     required this.formatDistance,
     required this.resultsStatusKey,
     required this.onSortChanged,
-    required this.onSelectDestination,
-    required this.onExplore,
+    required this.onOpenDetail,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final count = sortedPlaces.length;
     final statusText =
         '$count location${count == 1 ? '' : 's'} found. '
@@ -434,14 +379,15 @@ class _ResultsList extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
               statusText,
-              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              style: TextStyle(fontSize: 14, color: colorScheme.outline),
             ),
           ),
         ),
         _SortBar(sortOrder: sortOrder, onChanged: onSortChanged),
+        const SizedBox(height: 4),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             itemCount: sortedPlaces.length,
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
@@ -450,81 +396,65 @@ class _ResultsList extends StatelessWidget {
                 label: '${place.name}, ${place.address}',
                 button: true,
                 child: Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => onSelectDestination(place),
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => onOpenDetail(place),
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
                         children: [
-                          Text(
-                            place.name,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF0D1B2A),
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: colorScheme.primaryContainer,
+                            child: Icon(
+                              iconForPlaceType(place.type),
+                              color: colorScheme.onPrimaryContainer,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            place.address,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  place.name,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  place.address,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.near_me,
+                                      size: 14,
+                                      color: colorScheme.outline,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      formatDistance(distanceTo(place)),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: colorScheme.outline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.near_me,
-                                size: 14,
-                                color: Colors.grey[500],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                formatDistance(distanceTo(place)),
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.explore, size: 20),
-                                  label: const Text('Explore Nearby'),
-                                  onPressed: () => onExplore(place),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.directions,
-                                    size: 20,
-                                  ),
-                                  label: const Text('Get Directions'),
-                                  onPressed: () =>
-                                      onSelectDestination(place),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        const Color(0xFF1565C0),
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                          Icon(Icons.chevron_right, color: colorScheme.outline),
                         ],
                       ),
                     ),
@@ -549,38 +479,23 @@ class _SortBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
         children: [
-          Text(
-            'Sort:',
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          ChoiceChip(
+            label: const Text('Near → Far'),
+            selected: sortOrder == _SortOrder.distanceAsc,
+            onSelected: (_) => onChanged(_SortOrder.distanceAsc),
           ),
-          const SizedBox(width: 8),
-          DropdownButton<_SortOrder>(
-            value: sortOrder,
-            isDense: true,
-            underline: const SizedBox(),
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF1565C0),
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: _SortOrder.distanceAsc,
-                child: Text('Distance: Near → Far'),
-              ),
-              DropdownMenuItem(
-                value: _SortOrder.distanceDesc,
-                child: Text('Distance: Far → Near'),
-              ),
-              DropdownMenuItem(
-                value: _SortOrder.nameAsc,
-                child: Text('Name: A → Z'),
-              ),
-            ],
-            onChanged: (value) {
-              if (value != null) onChanged(value);
-            },
+          ChoiceChip(
+            label: const Text('Far → Near'),
+            selected: sortOrder == _SortOrder.distanceDesc,
+            onSelected: (_) => onChanged(_SortOrder.distanceDesc),
+          ),
+          ChoiceChip(
+            label: const Text('Name A → Z'),
+            selected: sortOrder == _SortOrder.nameAsc,
+            onSelected: (_) => onChanged(_SortOrder.nameAsc),
           ),
         ],
       ),
@@ -589,32 +504,23 @@ class _SortBar extends StatelessWidget {
 }
 
 class _HintView extends StatelessWidget {
-  final bool canExplore;
-  final VoidCallback? onExplore;
-
-  const _HintView({required this.canExplore, required this.onExplore});
+  const _HintView();
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search, size: 80, color: Colors.grey[300]),
+            Icon(Icons.search, size: 80, color: colorScheme.outlineVariant),
             const SizedBox(height: 16),
             Text(
               'Type a destination\nor hold the microphone to speak',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, color: Colors.grey[500]),
-            ),
-            const SizedBox(height: 32),
-            LargeButton(
-              label: 'Explore Current Location',
-              icon: Icons.explore,
-              onPressed: onExplore,
-              backgroundColor: Colors.teal[700],
+              style: TextStyle(fontSize: 18, color: colorScheme.outline),
             ),
           ],
         ),
