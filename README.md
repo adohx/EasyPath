@@ -65,3 +65,7 @@ cd backend/fastapi && pytest
 ## Safety notice
 
 This app uses open data (OpenStreetMap, Transit Windsor) that may be incomplete or outdated, and does not replace checking actual conditions on the ground. The app shows this disclaimer on first launch.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
