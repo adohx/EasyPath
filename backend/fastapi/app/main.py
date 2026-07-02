@@ -179,6 +179,78 @@ _MOTIS_DIRECTION_PHRASES = {
 _MOTIS_STRAIGHT_DIRECTIONS = {"DEPART", "CONTINUE"}
 
 
+def _step_bearing(step: dict) -> Optional[float]:
+    """Net compass bearing of a single MOTIS step, from the first to
+    the last point of its own polyline. Returns None when the step
+    carries no usable geometry (e.g. an elevator step).
+    """
+    poly = step.get("polyline") or {}
+    points = poly.get("points")
+    if not points:
+        return None
+    coords = _decode_polyline(points, poly.get("precision", 7))
+    if len(coords) < 2:
+        return None
+    (lat1, lon1), (lat2, lon2) = coords[0], coords[-1]
+    if lat1 == lat2 and lon1 == lon2:
+        return None
+    return _bearing(lat1, lon1, lat2, lon2)
+
+
+def _infer_relative_direction(prev_bearing: float, bearing: float) -> str:
+    """Classifies a manoeuvre from the change between two bearings."""
+    diff = (bearing - prev_bearing + 180) % 360 - 180
+    magnitude = abs(diff)
+    if magnitude < 20:
+        return "CONTINUE"
+    if magnitude < 45:
+        return "SLIGHTLY_RIGHT" if diff > 0 else "SLIGHTLY_LEFT"
+    if magnitude < 150:
+        return "RIGHT" if diff > 0 else "LEFT"
+    if magnitude < 170:
+        return "HARD_RIGHT" if diff > 0 else "HARD_LEFT"
+    return "UTURN_RIGHT" if diff > 0 else "UTURN_LEFT"
+
+
+# Segments shorter than this are usually just OSM way-splitting or a
+# curb/driveway nudge rather than a manoeuvre a pedestrian would
+# actually notice, so their bearing is too noisy to classify as a real
+# turn — treat them as a continuation of whatever came before instead
+# of announcing a spurious "turn right for 4 metres".
+_MIN_TURN_DISTANCE_METERS = 8
+
+
+def _infer_motis_step_directions(steps: list[dict]) -> list[dict]:
+    """MOTIS's own street router never computes a real relativeDirection
+    for ordinary street segments — it hard-codes CONTINUE for every
+    non-elevator, non-stairs step (see motis-project/motis's
+    street_routing.cc, `get_step_instructions`, which is marked
+    "TODO entry/exit/u-turn"). Without this, every walking leg comes
+    back as one flat "Continue straight for N metres" and turns are
+    never announced. Estimate the real manoeuvre instead from the
+    bearing change between each step's own polyline and the previous
+    one's, and only touch steps MOTIS left as the generic CONTINUE.
+    """
+    inferred: list[dict] = []
+    prev_bearing: Optional[float] = None
+    for step in steps:
+        copy = dict(step)
+        bearing = _step_bearing(step)
+        direction = str(step.get("relativeDirection") or "CONTINUE").upper()
+        distance = step.get("distance") or 0
+        if (
+            direction == "CONTINUE"
+            and bearing is not None
+            and prev_bearing is not None
+            and distance >= _MIN_TURN_DISTANCE_METERS
+        ):
+            copy["relativeDirection"] = _infer_relative_direction(prev_bearing, bearing)
+        if bearing is not None:
+            prev_bearing = bearing
+        inferred.append(copy)
+    return inferred
+
+
 def _motis_step_instruction(step: dict) -> str:
     direction = str(step.get("relativeDirection") or "CONTINUE").upper()
     street = str(step.get("streetName") or "")
@@ -444,7 +516,8 @@ def _motis_itinerary_to_route(
             )
 
         leg_steps = []
-        for step in _merge_motis_steps(leg.get("steps", [])):
+        raw_steps = _infer_motis_step_directions(leg.get("steps", []))
+        for step in _merge_motis_steps(raw_steps):
             dist = round(step.get("distance") or 0)
             leg_steps.append({
                 "instruction": _motis_step_instruction(step),
@@ -536,6 +609,16 @@ def _motis_itinerary_to_route(
     }
 
 
+# MOTIS snaps fromPlace/toPlace onto the street network within this
+# many metres and otherwise returns zero routes; its default is only
+# 25m, which is too tight for destinations set back from the road
+# behind a driveway or parking lot (e.g. suburban libraries, schools,
+# big-box stores) — those points geocode fine but silently fail to
+# route. 60m comfortably covers a large parking lot without matching
+# onto the wrong street entirely.
+_MOTIS_MAX_MATCHING_DISTANCE_METERS = 60
+
+
 async def _plan_via_motis(
     olat, olon, dlat, dlon, oname, dname, signals
 ) -> list:
@@ -548,6 +631,7 @@ async def _plan_via_motis(
                     "toPlace": f"{dlat},{dlon}",
                     "mode": "TRANSIT,WALK",
                     "numItineraries": 2,
+                    "maxMatchingDistance": _MOTIS_MAX_MATCHING_DISTANCE_METERS,
                 },
                 timeout=10.0,
             )

@@ -186,6 +186,8 @@ def test_plan_route_uses_motis_when_available(client):
     assert flat_geometry == pytest.approx(
         [42.3148332, -83.036593, 42.2980261, -82.9700609]
     )
+    motis_request = respx.calls.last.request
+    assert motis_request.url.params["maxMatchingDistance"] == "60"
 
 
 @respx.mock
