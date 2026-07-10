@@ -77,21 +77,16 @@ const _offRouteEscalationText =
 /// manual step-paging UI in `NavigationScreen`.
 class NavigationController {
   NavigationController({
-    required RoutePlan route,
+    required this._route,
     required PositionSource positionSource,
-    required HeadingSource headingSource,
-    required NavigationAnnouncer announcer,
-    required ExplorationSession explorationSession,
+    required this._headingSource,
+    required this._announcer,
+    required this._explorationSession,
     OffRouteDetector? offRouteDetector,
-    Duration progressAnnouncementInterval = const Duration(minutes: 3),
+    this._progressAnnouncementInterval = const Duration(minutes: 3),
     TrackedPlaceRepository? trackedPlaceRepository,
-  }) : _route = route,
-       _positionSource = positionSource,
-       _headingSource = headingSource,
-       _announcer = announcer,
-       _explorationSession = explorationSession,
+  }) : _positionSource = positionSource,
        _offRouteDetector = offRouteDetector ?? OffRouteDetector(),
-       _progressAnnouncementInterval = progressAnnouncementInterval,
        _trackedPlaceRepository =
            trackedPlaceRepository ?? TrackedPlaceRepository.instance;
 

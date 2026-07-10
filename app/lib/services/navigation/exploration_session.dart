@@ -23,11 +23,11 @@ import 'proximity_alert_engine.dart';
 /// user's real-time position.
 class ExplorationSession {
   ExplorationSession({
-    required ApiService apiService,
+    required this._apiService,
     this.sampleIntervalMeters = 350,
     this.maxSamples = 12,
     this.triggerDistanceMeters = 50,
-  }) : _apiService = apiService;
+  });
 
   final ApiService _apiService;
   final double sampleIntervalMeters;
