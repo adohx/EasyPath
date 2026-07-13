@@ -1,0 +1,20 @@
+#!/bin/sh
+# Strips personal Apple signing identity/team from staged .pbxproj files so
+# they never enter git history. Xcode writes these back into project.pbxproj
+# whenever it does automatic device signing, so this runs on every commit
+# rather than relying on a one-time fix. Only the staged snapshot is
+# rewritten; the working-tree file is left untouched so local device builds
+# keep working after the commit.
+
+pattern='CODE_SIGN_IDENTITY = "Apple Development: [^"]*";|DEVELOPMENT_TEAM = [A-Za-z0-9]+;'
+
+git diff --cached --name-only --diff-filter=ACM -- '*.pbxproj' | while IFS= read -r file; do
+  staged=$(git show ":$file")
+  cleaned=$(printf '%s\n' "$staged" | grep -vE "$pattern")
+  if [ "$staged" != "$cleaned" ]; then
+    blob=$(printf '%s\n' "$cleaned" | git hash-object -w --stdin)
+    mode=$(git ls-files -s -- "$file" | awk '{print $1}')
+    git update-index --cacheinfo "$mode,$blob,$file"
+    echo "pre-commit: stripped signing identity/team from staged $file (working copy untouched)" >&2
+  fi
+done
