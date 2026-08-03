@@ -7,7 +7,7 @@ import UIKit
 /// vibration table. `UIFeedbackGenerator` is used instead of Core Haptics
 /// because these are short, semantic cues (not a custom waveform), and it
 /// works without checking device capability up front.
-enum HapticPattern {
+enum HapticPattern: Equatable, Sendable {
     /// 短震一次 — an upcoming turn or an ordinary navigation functional
     /// point.
     case shortTap

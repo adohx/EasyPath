@@ -12,6 +12,7 @@ final class OutdoorNavigationViewModel {
     private let haptics: HapticsPlaying
     private var route: RoutePlan?
     private var consecutiveOffRouteReadings = 0
+    private var announcedPointIDs: Set<String> = []
 
     /// Design doc section 2.2.5: a single noisy GPS fix should not
     /// trigger an off-route warning — require several consecutive
@@ -47,13 +48,15 @@ final class OutdoorNavigationViewModel {
         locationTask = nil
         route = nil
         state = nil
+        announcedPointIDs = []
     }
 
     private func handle(location: CLLocation) async {
         guard let route else { return }
+        let currentLocation = Coordinates(location.coordinate)
 
         let newState = NavigationStateBuilder.build(
-            location: Coordinates(location.coordinate),
+            location: currentLocation,
             headingDegrees: location.course >= 0 ? location.course : nil,
             speedMetersPerSecond: location.speed >= 0 ? location.speed : nil,
             route: route,
@@ -75,5 +78,24 @@ final class OutdoorNavigationViewModel {
                 priority: .riskPoint
             )
         }
+
+        await announceNearbyPointIfNeeded(from: currentLocation, route: route)
+    }
+
+    /// Design doc section 2.2.8: announce the highest-priority in-range
+    /// functional/risk point once, never repeating it — see
+    /// `ProximityAnnouncer` for the tier/distance/dedup logic.
+    private func announceNearbyPointIfNeeded(from location: Coordinates, route: RoutePlan) async {
+        guard let next = ProximityAnnouncer.nextAnnouncement(
+            location: location,
+            functionalPoints: route.functionalPoints,
+            riskPoints: route.riskPoints,
+            alreadyAnnouncedIDs: announcedPointIDs
+        ) else {
+            return
+        }
+        announcedPointIDs.insert(next.pointID)
+        await haptics.play(next.hapticPattern)
+        await speechOutput.speak(next.text, priority: next.priority)
     }
 }

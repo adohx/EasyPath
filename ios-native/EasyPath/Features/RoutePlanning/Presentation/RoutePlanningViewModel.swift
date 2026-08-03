@@ -3,23 +3,38 @@ import Foundation
 @Observable
 @MainActor
 final class RoutePlanningViewModel {
+    var query = ""
     private(set) var searchResults: [Place] = []
     private(set) var routeOptions: [RoutePlan] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
+    private(set) var isListening = false
 
     private let repository: RoutePlanningRepositoring
     private let speechOutput: SpeechOutputting
+    private let speechRecognizer: SpeechRecognizing
     private let handoffService: AppHandoffServicing
+    private let settingsStore: AppSettingsStoring
 
     init(
         repository: RoutePlanningRepositoring,
         speechOutput: SpeechOutputting,
-        handoffService: AppHandoffServicing
+        speechRecognizer: SpeechRecognizing,
+        handoffService: AppHandoffServicing,
+        settingsStore: AppSettingsStoring
     ) {
         self.repository = repository
         self.speechOutput = speechOutput
+        self.speechRecognizer = speechRecognizer
         self.handoffService = handoffService
+        self.settingsStore = settingsStore
+    }
+
+    /// Formats a distance per the user's `MeasurementUnit` preference
+    /// (design doc section 1.1.1) — used for `RouteSummaryRow`'s walking
+    /// distance display.
+    func formattedDistance(_ meters: Double) -> String {
+        DistanceFormatter.string(meters: meters, unit: settingsStore.load().measurementUnit)
     }
 
     func search(query: String) async {
@@ -38,6 +53,41 @@ final class RoutePlanningViewModel {
             errorMessage = "Could not search for that destination."
             searchResults = []
         }
+    }
+
+    func searchCurrentQuery() async {
+        await search(query: query)
+    }
+
+    /// Design doc section 3.1.1.1's "hold to talk" flow, tap-to-toggle
+    /// instead of press-and-hold: a hold gesture isn't reliably
+    /// discoverable with VoiceOver, so `RoutePlanningView`'s microphone
+    /// button starts listening on one tap and stops on the next.
+    func startVoiceInput() async {
+        let authorized = await speechRecognizer.requestAuthorization()
+        guard authorized else {
+            errorMessage = "Speech recognition isn't authorized in Settings."
+            return
+        }
+        do {
+            try speechRecognizer.startListening()
+            isListening = true
+        } catch {
+            Log.navigation.error("Failed to start speech recognition: \(error)")
+            errorMessage = "Couldn't start listening."
+        }
+    }
+
+    /// Stops listening, and if a transcript came back, fills it into
+    /// `query` and searches with it immediately — mirroring the design
+    /// doc's "识别文字 → 意图识别（这里简化为直接搜索）→ TTS 确认" flow.
+    func stopVoiceInputAndSearch() async {
+        isListening = false
+        guard let transcript = await speechRecognizer.stopListening(), !transcript.isEmpty else {
+            return
+        }
+        query = transcript
+        await search(query: transcript)
     }
 
     /// Plans routes from `origin` to `destination` and announces the

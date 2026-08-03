@@ -1,21 +1,30 @@
 # Settings
 
-**Status:** ported at current Flutter feature parity (vibration toggle +
-safety notice link). Flutter equivalent: `app/lib/screens/settings_screen.dart`.
+**Status:** exceeds current Flutter feature parity. Covers design doc
+section 1.1.1 ("设置偏好语音、语言、提醒、声音、半径和度量单位") in full:
+vibration toggle, preferred TTS voice + language, default Explore search
+radius, and measurement units, plus the safety notice link. Flutter
+equivalent (vibration toggle + notice link only):
+`app/lib/screens/settings_screen.dart`.
 
-Design doc section 1.1.1 ("设置偏好语音、语言、提醒、声音、半径和度量单位")
-describes a bigger surface than what exists today in either version:
-preferred voice, language, alert radius, measurement units. Those are
-called out as TODO fields on `AppSettings` in
-`Domain/AppSettings.swift` but have no UI yet.
+How each preference is actually consumed, since a setting with no reader
+is dead weight:
+
+- `preferredVoiceIdentifier`/`preferredLanguageCode` →
+  `Core/Speech/SpeechOutput.swift` reads both fresh on every
+  `speak(_:priority:)` call.
+- `alertRadiusMeters` → `ExplorationViewModel.loadNearby(center:radiusMeters:)`
+  uses it as the default when no explicit radius is passed. Deliberately
+  **not** used to override individual functional/risk points' own
+  `triggerDistanceMeters` during live navigation — see that field's doc
+  comment in `Domain/AppSettings.swift` for why.
+- `measurementUnit` → `Core/Extensions/DistanceFormatter.swift`, used so
+  far by `RoutePlanningViewModel.formattedDistance(_:)`.
 
 ## Where to start
 
-Good entry point for a new contributor:
-
-1. Pick one pending preference (e.g. alert radius) from
-   `Domain/AppSettings.swift`.
-2. Add the field, a `SettingsView` control for it, and thread it through
-   to the feature that should read it — alert radius belongs to
-   `OutdoorNavigation`'s proximity-trigger logic (see that module's
-   README and design doc section 2.2.4).
+The voice/language pickers in `SettingsView` use a small curated language
+list (`en-CA`/`en-US`/`fr-CA`/`fr-FR`) rather than every locale the device
+supports — widening that list, or replacing it with something driven by
+`AVSpeechSynthesisVoice.speechVoices()`'s actual language coverage, is a
+reasonable next contribution.

@@ -9,12 +9,9 @@ struct ExplorationView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(
-                    viewModel.categories.keys.sorted(by: { $0.rawValue < $1.rawValue }),
-                    id: \.self
-                ) { category in
-                    Section("\(category.rawValue) (\(viewModel.categories[category]?.count ?? 0))") {
-                        ForEach(viewModel.categories[category] ?? []) { item in
+                ForEach(viewModel.sections) { section in
+                    Section("\(section.label) (\(section.items.count))") {
+                        ForEach(section.items) { item in
                             ExplorationItemRow(item: item)
                         }
                     }
@@ -24,7 +21,7 @@ struct ExplorationView: View {
             .overlay {
                 if viewModel.isLoading {
                     ProgressView()
-                } else if viewModel.categories.isEmpty {
+                } else if viewModel.sections.isEmpty {
                     ContentUnavailableView(
                         "No Nearby Places",
                         systemImage: "mappin.slash"
@@ -36,15 +33,32 @@ struct ExplorationView: View {
 }
 
 private struct ExplorationItemRow: View {
-    let item: ExplorationItem
+    let item: ExplorationDisplayItem
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(item.name)
-            Text("\(Int(item.distanceMeters))m "
-                + GeoUtils.compassDirectionLabel(item.bearingDegrees))
-                .font(AppTheme.Typography.caption)
+        switch item {
+        case .official(let explorationItem):
+            VStack(alignment: .leading) {
+                Text(explorationItem.name)
+                Text("\(Int(explorationItem.distanceMeters))m "
+                    + GeoUtils.compassDirectionLabel(explorationItem.bearingDegrees))
+                    .font(AppTheme.Typography.caption)
+            }
+            .accessibilityElement(children: .combine)
+        case .personal(let place):
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(place.name)
+                    Text(place.category.label)
+                        .font(AppTheme.Typography.caption)
+                }
+                Spacer()
+                Image(systemName: "star.fill")
+                    .foregroundStyle(AppTheme.Colors.explorationPoint)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(place.name), personal place, \(place.category.label)")
         }
-        .accessibilityElement(children: .combine)
     }
 }

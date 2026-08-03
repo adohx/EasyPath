@@ -1,14 +1,24 @@
 # OutdoorNavigation
 
-**Status:** basic live tracking, route progress, and confirmed-off-route
-detection ported (design doc sections 2.2.2, 2.2.3, 2.2.5, 2.2.6). Flutter
-equivalent: `app/lib/screens/navigation_screen.dart`,
-`app/lib/services/navigation/`.
+**Status:** live tracking, route progress, confirmed-off-route detection,
+and functional/risk-point proximity announcements ported (design doc
+sections 2.2.2, 2.2.3, 2.2.5, 2.2.6, 2.2.8). Flutter equivalent:
+`app/lib/screens/navigation_screen.dart`, `app/lib/services/navigation/`.
 
-`Domain/NavigationStateBuilder.swift` is pure logic (no CoreLocation
-dependency) built on `Core/Extensions/GeoUtils.swift`'s route-projection
-math — it's the piece to unit test first if you're picking this module
-up.
+`Domain/NavigationStateBuilder.swift` and `Domain/ProximityAnnouncer.swift`
+are both pure logic (no CoreLocation dependency), built on
+`Core/Extensions/GeoUtils.swift`'s route-projection math — they're the
+pieces to unit test first if you're picking this module up (see
+`EasyPathTests/Features/OutdoorNavigation/ProximityAnnouncerTests.swift`
+for the tier/distance/dedup behavior).
+
+Proximity announcements: `OutdoorNavigationViewModel` tracks
+`announcedPointIDs` and calls `ProximityAnnouncer.nextAnnouncement(...)`
+on every location update. This also covers the design doc's 2.2.7 "advance
+alight reminder" — a `busAlight` functional point is just a `required`
+point like any other, so it gets announced (with the `.shortThenLong`
+haptic the design doc calls out specifically for board/alight moments)
+through the same mechanism, not a separate code path.
 
 ## Known simplifications (not bugs, just not done yet)
 
@@ -27,22 +37,21 @@ up.
 - **GPS smoothing, outlier filtering, and true map matching** (design doc
   section 6, "定位增强", Phase 6) are not implemented — this uses raw
   `CLLocation` fixes as-is.
-- **Vibration and speech priority integration is minimal**: only the
-  off-route case is wired to `HapticsPlaying`/`SpeechOutputting`.
-  Approaching-functional-point announcements (section 2.2.8) and the
-  bus/taxi alight reminder (section 2.2.7) are not implemented.
+- **Taxi board/alight has no dedicated haptic distinction from bus**:
+  `ProximityAnnouncer` maps all `required`-importance functional points
+  by `FunctionalPointType`, and the backend doesn't currently emit a
+  taxi-specific type (see `Core/Models/FunctionalPoint.swift`'s note) —
+  revisit `ProximityAnnouncer.hapticPattern(for:)` if/when it does.
 - **Experimental crosswalk-signal assist** (section 2.2.9) has no
   scaffold at all yet — it's a research spike (camera-based signal
   detection or an OKO app hand-off), not a straightforward port.
 
 ## Where to start
 
-Approaching-functional-point announcements (section 2.2.8) is the most
-valuable next slice: extend `OutdoorNavigationViewModel.handle(location:)`
-to check `state.nextFunctionalPoint`'s distance against
-`FunctionalPoint.triggerDistanceMeters` and call `speechOutput.speak(...)`
-with the appropriate `AnnouncementPriorityTier` from
-`Core/Models/AnnouncementPriority.swift`.
+GPS smoothing / outlier filtering (design doc section 6, "定位增强",
+Phase 6) is the most valuable next slice now that proximity announcements
+are in place — see the Soundscape reference below for a ready-made Kalman
+filter approach instead of designing one from scratch.
 
 ## Reference implementation worth reading before building announcements/GPS smoothing
 

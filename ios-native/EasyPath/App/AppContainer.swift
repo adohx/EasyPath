@@ -29,11 +29,11 @@ final class AppContainer {
     init(modelContainer: ModelContainer) {
         apiClient = APIClient(baseURL: AppConfig.backendBaseURL)
         locationProvider = CoreLocationProvider()
-        speechOutput = SpeechOutput()
+        settingsStore = UserDefaultsAppSettingsStore()
+        speechOutput = SpeechOutput(settingsStore: settingsStore)
         speechRecognizer = SpeechRecognizer()
         haptics = HapticsPlayer()
         disclaimerStore = UserDefaultsDisclaimerStore()
-        settingsStore = UserDefaultsAppSettingsStore()
         routePlanningRepository = APIRoutePlanningRepository(apiClient: apiClient)
         explorationRepository = APIExplorationRepository(apiClient: apiClient)
         personalPlacesRepository = SwiftDataPersonalPlacesRepository(
@@ -70,12 +70,18 @@ final class AppContainer {
         RoutePlanningViewModel(
             repository: routePlanningRepository,
             speechOutput: speechOutput,
-            handoffService: appHandoffService
+            speechRecognizer: speechRecognizer,
+            handoffService: appHandoffService,
+            settingsStore: settingsStore
         )
     }
 
     func makeExplorationViewModel() -> ExplorationViewModel {
-        ExplorationViewModel(repository: explorationRepository)
+        ExplorationViewModel(
+            repository: explorationRepository,
+            personalPlacesRepository: personalPlacesRepository,
+            settingsStore: settingsStore
+        )
     }
 
     func makePersonalPlacesViewModel() -> PersonalPlacesViewModel {

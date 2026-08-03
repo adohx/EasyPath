@@ -6,18 +6,20 @@ import SwiftUI
 /// README.
 struct RoutePlanningView: View {
     @Bindable var viewModel: RoutePlanningViewModel
-    @State private var query = ""
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Destination") {
-                    TextField("Where do you want to go?", text: $query)
-                        .textInputAutocapitalization(.words)
-                        .onSubmit { Task { await viewModel.search(query: query) } }
-                        .accessibilityHint(
-                            "Enter a destination name or address, then search"
-                        )
+                    HStack {
+                        TextField("Where do you want to go?", text: $viewModel.query)
+                            .textInputAutocapitalization(.words)
+                            .onSubmit { Task { await viewModel.searchCurrentQuery() } }
+                            .accessibilityHint(
+                                "Enter a destination name or address, then search"
+                            )
+                        VoiceInputButton(viewModel: viewModel)
+                    }
                 }
 
                 if !viewModel.searchResults.isEmpty {
@@ -50,6 +52,30 @@ struct RoutePlanningView: View {
     }
 }
 
+private struct VoiceInputButton: View {
+    let viewModel: RoutePlanningViewModel
+
+    var body: some View {
+        Button {
+            Task {
+                if viewModel.isListening {
+                    await viewModel.stopVoiceInputAndSearch()
+                } else {
+                    await viewModel.startVoiceInput()
+                }
+            }
+        } label: {
+            Image(systemName: viewModel.isListening ? "mic.fill" : "mic")
+        }
+        .accessibilityLabel(viewModel.isListening ? "Stop listening" : "Search by voice")
+        .accessibilityHint(
+            viewModel.isListening
+                ? "Stops listening and searches for what you said"
+                : "Starts listening for a spoken destination"
+        )
+    }
+}
+
 private struct RouteSummaryRow: View {
     let route: RoutePlan
     let viewModel: RoutePlanningViewModel
@@ -60,7 +86,7 @@ private struct RouteSummaryRow: View {
                 Text("\(route.totalDurationSeconds / 60) minutes")
                     .font(AppTheme.Typography.body)
                 Text("\(route.transferCount) transfers · "
-                    + "\(Int(route.totalWalkingDistanceMeters))m walking")
+                    + "\(viewModel.formattedDistance(route.totalWalkingDistanceMeters)) walking")
                     .font(AppTheme.Typography.caption)
             }
             .accessibilityElement(children: .combine)

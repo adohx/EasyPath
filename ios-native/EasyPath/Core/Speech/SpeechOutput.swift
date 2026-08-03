@@ -17,7 +17,16 @@ protocol SpeechOutputting: Sendable {
 
 final class SpeechOutput: NSObject, SpeechOutputting, @unchecked Sendable {
     private let synthesizer = AVSpeechSynthesizer()
+    private let settingsStore: AppSettingsStoring
     private var currentPriority: AnnouncementPriorityTier?
+
+    /// Reads the user's preferred voice/language (design doc section
+    /// 1.1.1) fresh on every `speak(_:priority:)` call rather than
+    /// caching it, since `Settings` can change while navigation or route
+    /// planning is in progress elsewhere in the app.
+    init(settingsStore: AppSettingsStoring) {
+        self.settingsStore = settingsStore
+    }
 
     func speak(_ text: String, priority: AnnouncementPriorityTier) async {
         // Lower `AnnouncementPriorityTier` rawValues are more urgent
@@ -29,8 +38,18 @@ final class SpeechOutput: NSObject, SpeechOutputting, @unchecked Sendable {
         currentPriority = priority
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
+        utterance.voice = preferredVoice()
         synthesizer.speak(utterance)
+    }
+
+    private func preferredVoice() -> AVSpeechSynthesisVoice? {
+        let settings = settingsStore.load()
+        if let identifier = settings.preferredVoiceIdentifier,
+           let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+            return voice
+        }
+        return AVSpeechSynthesisVoice(language: settings.preferredLanguageCode)
+            ?? AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
     }
 
     func stop() {

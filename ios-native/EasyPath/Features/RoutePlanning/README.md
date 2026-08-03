@@ -1,8 +1,17 @@
 # RoutePlanning
 
 **Status:** destination search + route option comparison ported (design
-doc sections 2.1.1, 2.1.6, 2.1.8). Flutter equivalents:
-`app/lib/screens/home_screen.dart`, `route_selection_screen.dart`.
+doc sections 2.1.1, 2.1.6, 2.1.8), plus voice search input (section
+3.1.1.1) and third-party hand-off buttons per leg (see the last section
+below). Flutter equivalents: `app/lib/screens/home_screen.dart`,
+`route_selection_screen.dart`.
+
+Voice input: `RoutePlanningViewModel.startVoiceInput()`/
+`stopVoiceInputAndSearch()` wrap `Core/Speech/SpeechRecognizer.swift`,
+surfaced as a tap-to-toggle microphone button in `RoutePlanningView`
+(`VoiceInputButton`) rather than the design doc's press-and-hold, since a
+hold gesture isn't reliably discoverable with VoiceOver. Recognized text
+fills `viewModel.query` and searches immediately.
 
 ## Not yet ported
 
@@ -30,10 +39,13 @@ The step-by-step playback item is the most self-contained: it only needs
 that plays through `NavigationStep`s, mirroring
 `route_detail_screen.dart`'s behavior.
 
-## Possible future direction: hand off instead of self-building
+## Third-party hand-off (implemented, secondary path)
 
-See `OutdoorNavigation/README.md`'s matching section and
-`.claude/memory/third_party_deeplink_feasibility.md`. `RouteSummaryRow`
-in `RoutePlanningView.swift` would be a natural place to add "open in
-Apple Maps / Google Maps / Moovit" actions via
-`Core/Handoff/AppHandoffService.swift`, once that direction is decided.
+`RouteSummaryRow`/`LegHandoffRow` in `RoutePlanningView.swift` show
+"open in Apple Maps / Google Maps / Moovit" buttons per leg, via
+`RoutePlanningViewModel.openLegInThirdPartyApp(_:target:)` and
+`Core/Handoff/AppHandoffService.swift` — see
+`.claude/memory/third_party_deeplink_feasibility.md` and
+`docs/9.第三方生态调研与集成可行性.md` section six for why this stays a
+secondary, opt-in action rather than the default path (it loses our
+accessibility annotations, and most targets don't hand control back).
