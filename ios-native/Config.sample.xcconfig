@@ -1,0 +1,7 @@
+// Copy this file to Config.xcconfig (gitignored) and point BACKEND_BASE_URL
+// at your own backend instance. See backend/docker-compose.yml for running
+// the FastAPI + MOTIS + Overpass stack locally.
+//
+// Xcconfig does not allow raw "//" in unescaped values, so the URL's
+// scheme separator is escaped as required by the format.
+BACKEND_BASE_URL = http:$()//localhost:8000
