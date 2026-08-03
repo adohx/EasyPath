@@ -67,7 +67,11 @@ final class AppContainer {
     }
 
     func makeRoutePlanningViewModel() -> RoutePlanningViewModel {
-        RoutePlanningViewModel(repository: routePlanningRepository, speechOutput: speechOutput)
+        RoutePlanningViewModel(
+            repository: routePlanningRepository,
+            speechOutput: speechOutput,
+            handoffService: appHandoffService
+        )
     }
 
     func makeExplorationViewModel() -> ExplorationViewModel {

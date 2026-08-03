@@ -31,7 +31,7 @@ struct RoutePlanningView: View {
                 if !viewModel.routeOptions.isEmpty {
                     Section("Route Options") {
                         ForEach(viewModel.routeOptions) { route in
-                            RouteSummaryRow(route: route)
+                            RouteSummaryRow(route: route, viewModel: viewModel)
                         }
                     }
                 }
@@ -52,15 +52,59 @@ struct RoutePlanningView: View {
 
 private struct RouteSummaryRow: View {
     let route: RoutePlan
+    let viewModel: RoutePlanningViewModel
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("\(route.totalDurationSeconds / 60) minutes")
-                .font(AppTheme.Typography.body)
-            Text("\(route.transferCount) transfers · "
-                + "\(Int(route.totalWalkingDistanceMeters))m walking")
-                .font(AppTheme.Typography.caption)
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading) {
+                Text("\(route.totalDurationSeconds / 60) minutes")
+                    .font(AppTheme.Typography.body)
+                Text("\(route.transferCount) transfers · "
+                    + "\(Int(route.totalWalkingDistanceMeters))m walking")
+                    .font(AppTheme.Typography.caption)
+            }
+            .accessibilityElement(children: .combine)
+
+            // Demo-only: hands each leg off to a specialized app instead
+            // of tracking it in-app. See this module's README, "Possible
+            // future direction" — not the default path.
+            ForEach(route.legs) { leg in
+                LegHandoffRow(leg: leg, viewModel: viewModel)
+            }
         }
-        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct LegHandoffRow: View {
+    let leg: JourneyLeg
+    let viewModel: RoutePlanningViewModel
+
+    private var targets: [HandoffTarget] {
+        switch leg.mode {
+        case .walk: [.appleMaps, .googleMaps]
+        case .transit, .bus: [.moovit]
+        case .taxi: []
+        }
+    }
+
+    var body: some View {
+        if !targets.isEmpty {
+            HStack {
+                Text("\(leg.from.name) → \(leg.to.name)")
+                    .font(AppTheme.Typography.caption)
+                Spacer()
+                ForEach(targets) { target in
+                    Button(target.displayName) {
+                        Task { await viewModel.openLegInThirdPartyApp(leg, target: target) }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Open \(target.displayName)")
+                    .accessibilityHint(
+                        "Leaves EasyPath and opens \(target.displayName) "
+                        + "with directions for this leg"
+                    )
+                }
+            }
+        }
     }
 }
