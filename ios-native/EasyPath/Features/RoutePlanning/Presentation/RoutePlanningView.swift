@@ -25,7 +25,7 @@ struct RoutePlanningView: View {
                 if !viewModel.searchResults.isEmpty {
                     Section("Results") {
                         ForEach(viewModel.searchResults) { place in
-                            Text(place.name)
+                            SearchResultRow(place: place, viewModel: viewModel)
                         }
                     }
                 }
@@ -73,6 +73,27 @@ private struct VoiceInputButton: View {
                 ? "Stops listening and searches for what you said"
                 : "Starts listening for a spoken destination"
         )
+    }
+}
+
+private struct SearchResultRow: View {
+    let place: Place
+    let viewModel: RoutePlanningViewModel
+
+    var body: some View {
+        Button {
+            Task { await viewModel.selectDestination(place) }
+        } label: {
+            VStack(alignment: .leading) {
+                Text(place.name)
+                if let address = place.address {
+                    Text(address)
+                        .font(AppTheme.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityHint("Plans a route from your current location to \(place.name)")
     }
 }
 

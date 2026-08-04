@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 @Observable
@@ -15,19 +16,22 @@ final class RoutePlanningViewModel {
     private let speechRecognizer: SpeechRecognizing
     private let handoffService: AppHandoffServicing
     private let settingsStore: AppSettingsStoring
+    private let locationProvider: LocationProviding
 
     init(
         repository: RoutePlanningRepositoring,
         speechOutput: SpeechOutputting,
         speechRecognizer: SpeechRecognizing,
         handoffService: AppHandoffServicing,
-        settingsStore: AppSettingsStoring
+        settingsStore: AppSettingsStoring,
+        locationProvider: LocationProviding
     ) {
         self.repository = repository
         self.speechOutput = speechOutput
         self.speechRecognizer = speechRecognizer
         self.handoffService = handoffService
         self.settingsStore = settingsStore
+        self.locationProvider = locationProvider
     }
 
     /// Formats a distance per the user's `MeasurementUnit` preference
@@ -88,6 +92,32 @@ final class RoutePlanningViewModel {
         }
         query = transcript
         await search(query: transcript)
+    }
+
+    /// Tapping a search result (design doc section 2.1.1): gets the
+    /// user's current GPS fix as the origin — per section 2.1.5 the
+    /// default origin is "current location", confirmed to the user via
+    /// the spoken route summary `planRoutes` already announces — then
+    /// plans routes to it. This is the only current entry point into
+    /// `planRoutes`; there's no manual-origin flow yet.
+    func selectDestination(_ place: Place) async {
+        isLoading = true
+        errorMessage = nil
+
+        locationProvider.requestWhenInUseAuthorization()
+        var location: CLLocation?
+        for await update in locationProvider.locationUpdates() {
+            location = update
+            break
+        }
+        guard let location else {
+            isLoading = false
+            errorMessage = "Could not determine your current location."
+            return
+        }
+
+        isLoading = false
+        await planRoutes(origin: Coordinates(location.coordinate), to: place)
     }
 
     /// Plans routes from `origin` to `destination` and announces the

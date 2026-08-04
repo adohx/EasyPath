@@ -72,7 +72,8 @@ final class AppContainer {
             speechOutput: speechOutput,
             speechRecognizer: speechRecognizer,
             handoffService: appHandoffService,
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            locationProvider: locationProvider
         )
     }
 

@@ -13,6 +13,12 @@ surfaced as a tap-to-toggle microphone button in `RoutePlanningView`
 hold gesture isn't reliably discoverable with VoiceOver. Recognized text
 fills `viewModel.query` and searches immediately.
 
+Tapping a search result (`SearchResultRow`) calls
+`RoutePlanningViewModel.selectDestination(_:)`, which gets a single
+current-location fix from `LocationProviding` (per design doc section
+2.1.5, current GPS is the default origin — there's no manual-origin
+entry point yet) and calls `planRoutes(origin:to:)`.
+
 ## Not yet ported
 
 - **Waypoints** (section 2.1.4) — adding/removing stops before the final
