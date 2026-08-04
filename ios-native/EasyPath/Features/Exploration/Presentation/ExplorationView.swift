@@ -21,12 +21,19 @@ struct ExplorationView: View {
             .overlay {
                 if viewModel.isLoading {
                     ProgressView()
+                } else if let errorMessage = viewModel.errorMessage {
+                    ContentUnavailableView(
+                        errorMessage, systemImage: "location.slash"
+                    )
                 } else if viewModel.sections.isEmpty {
                     ContentUnavailableView(
                         "No Nearby Places",
                         systemImage: "mappin.slash"
                     )
                 }
+            }
+            .task {
+                await viewModel.loadNearbyAroundCurrentLocation()
             }
         }
     }

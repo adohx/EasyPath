@@ -85,11 +85,9 @@ struct RoutePlanningViewModelTests {
                 totalWalkingDistanceMeters: 400, transferCount: 0, legs: [],
                 functionalPoints: [], riskPoints: [],
                 accessibilitySummary: AccessibilitySummary(
-                    score: nil, riskPointCount: nil, importantIntersectionCount: nil,
-                    crossingCount: nil, hasConstruction: nil, hasSidewalkClosure: nil,
-                    hasSteps: nil, hasAccessibleEntrance: nil,
-                    hasAudiblePedestrianSignal: nil, requiresParkingLotCrossing: nil,
-                    dataComplete: nil
+                    score: nil, streetCrossings: nil, transferCount: nil,
+                    knownEntrances: nil, audibleSignals: nil, constructionAlerts: nil,
+                    walkingDistanceMeters: nil, dataComplete: nil
                 ),
                 geometry: []
             ),

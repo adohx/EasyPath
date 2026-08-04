@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 @Observable
@@ -10,15 +11,38 @@ final class ExplorationViewModel {
     private let repository: ExplorationRepositoring
     private let personalPlacesRepository: PersonalPlacesRepositoring
     private let settingsStore: AppSettingsStoring
+    private let locationProvider: LocationProviding
 
     init(
         repository: ExplorationRepositoring,
         personalPlacesRepository: PersonalPlacesRepositoring,
-        settingsStore: AppSettingsStoring
+        settingsStore: AppSettingsStoring,
+        locationProvider: LocationProviding
     ) {
         self.repository = repository
         self.personalPlacesRepository = personalPlacesRepository
         self.settingsStore = settingsStore
+        self.locationProvider = locationProvider
+    }
+
+    /// Called from `ExplorationView`'s `.task` on first appearance —
+    /// without this, nothing ever calls `loadNearby`, so the screen
+    /// would show "No Nearby Places" forever regardless of backend or
+    /// location health. Gets a current GPS fix (with the same timeout
+    /// guard as `RoutePlanning`'s destination selection — see
+    /// `LocationProviding.currentLocation(timeout:)`) and loads around
+    /// it.
+    func loadNearbyAroundCurrentLocation() async {
+        isLoading = true
+        errorMessage = nil
+
+        guard let location = await locationProvider.currentLocation() else {
+            isLoading = false
+            errorMessage = "Could not determine your current location."
+            return
+        }
+
+        await loadNearby(center: Coordinates(location.coordinate))
     }
 
     /// Loads nearby points of interest around `center` — either the

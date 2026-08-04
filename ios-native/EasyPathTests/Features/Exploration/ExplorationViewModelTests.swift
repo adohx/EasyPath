@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Testing
 @testable import EasyPath
@@ -11,7 +12,8 @@ struct ExplorationViewModelTests {
         let viewModel = ExplorationViewModel(
             repository: repository,
             personalPlacesRepository: FakePersonalPlacesRepository(),
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            locationProvider: FakeLocationProvider()
         )
 
         await viewModel.loadNearby(center: Coordinates(latitude: 0, longitude: 0))
@@ -26,7 +28,8 @@ struct ExplorationViewModelTests {
         let viewModel = ExplorationViewModel(
             repository: repository,
             personalPlacesRepository: FakePersonalPlacesRepository(),
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            locationProvider: FakeLocationProvider()
         )
 
         await viewModel.loadNearby(center: Coordinates(latitude: 0, longitude: 0), radiusMeters: 100)
@@ -54,12 +57,46 @@ struct ExplorationViewModelTests {
         let viewModel = ExplorationViewModel(
             repository: repository,
             personalPlacesRepository: personalPlaces,
-            settingsStore: FakeAppSettingsStore()
+            settingsStore: FakeAppSettingsStore(),
+            locationProvider: FakeLocationProvider()
         )
 
         await viewModel.loadNearby(center: Coordinates(latitude: 0, longitude: 0))
 
         #expect(viewModel.sections.map(\.label).sorted() == ["Work", "pharmacy"])
+    }
+
+    @Test func loadNearbyAroundCurrentLocationUsesLocationProvider() async {
+        let repository = FakeExplorationRepository()
+        let locationProvider = FakeLocationProvider()
+        locationProvider.locationToYield = CLLocation(latitude: 42.3149, longitude: -83.0364)
+        let viewModel = ExplorationViewModel(
+            repository: repository,
+            personalPlacesRepository: FakePersonalPlacesRepository(),
+            settingsStore: FakeAppSettingsStore(),
+            locationProvider: locationProvider
+        )
+
+        await viewModel.loadNearbyAroundCurrentLocation()
+
+        #expect(locationProvider.didRequestAuthorization)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func loadNearbyAroundCurrentLocationFailsWhenLocationUnavailable() async {
+        let locationProvider = FakeLocationProvider()
+        locationProvider.locationToYield = nil
+        let viewModel = ExplorationViewModel(
+            repository: FakeExplorationRepository(),
+            personalPlacesRepository: FakePersonalPlacesRepository(),
+            settingsStore: FakeAppSettingsStore(),
+            locationProvider: locationProvider
+        )
+
+        await viewModel.loadNearbyAroundCurrentLocation()
+
+        #expect(viewModel.errorMessage != nil)
+        #expect(viewModel.sections.isEmpty)
     }
 }
 

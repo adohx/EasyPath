@@ -81,7 +81,8 @@ final class AppContainer {
         ExplorationViewModel(
             repository: explorationRepository,
             personalPlacesRepository: personalPlacesRepository,
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            locationProvider: locationProvider
         )
     }
 

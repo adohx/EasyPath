@@ -13,6 +13,32 @@ struct Coordinates: Codable, Hashable, Sendable {
         case latitude = "lat"
         case longitude = "lon"
     }
+
+    init(latitude: Double, longitude: Double) {
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    /// The backend encodes coordinates two different ways depending on
+    /// the endpoint: most places send `{"lat": ..., "lon": ...}`, but
+    /// `RoutePlan.geometry`'s polyline sends `[lat, lon]` pairs instead
+    /// (`docs/4.接口文档.md`'s `geometry` field) — decode either shape
+    /// rather than forcing every call site to know which one applies.
+    /// `encode(to:)` is left to the synthesized implementation, which
+    /// always writes the `{lat, lon}` object shape (correct for every
+    /// request body this app sends).
+    init(from decoder: Decoder) throws {
+        if let keyed = try? decoder.container(keyedBy: CodingKeys.self),
+           let lat = try? keyed.decode(Double.self, forKey: .latitude),
+           let lon = try? keyed.decode(Double.self, forKey: .longitude) {
+            latitude = lat
+            longitude = lon
+            return
+        }
+        var unkeyed = try decoder.unkeyedContainer()
+        latitude = try unkeyed.decode(Double.self)
+        longitude = try unkeyed.decode(Double.self)
+    }
 }
 
 extension Coordinates {

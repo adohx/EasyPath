@@ -103,20 +103,13 @@ final class RoutePlanningViewModel {
     func selectDestination(_ place: Place) async {
         isLoading = true
         errorMessage = nil
+        defer { isLoading = false }
 
-        locationProvider.requestWhenInUseAuthorization()
-        var location: CLLocation?
-        for await update in locationProvider.locationUpdates() {
-            location = update
-            break
-        }
-        guard let location else {
-            isLoading = false
+        guard let location = await locationProvider.currentLocation() else {
             errorMessage = "Could not determine your current location."
             return
         }
 
-        isLoading = false
         await planRoutes(origin: Coordinates(location.coordinate), to: place)
     }
 

@@ -12,10 +12,19 @@ struct FunctionalPoint: Codable, Hashable, Sendable, Identifiable {
     let description: String
     let importance: FunctionalPointImportance
     let triggerDistanceMeters: Double
-    let requiresConfirmation: Bool
+    /// The backend (`_transit_functional_points` in `backend/fastapi/app/main.py`)
+    /// never actually sends this field — optional so a missing key
+    /// decodes to `nil` instead of failing the whole `RoutePlan` decode
+    /// (this broke route planning entirely on 2026-08-03 before being
+    /// caught, alongside `location` below).
+    let requiresConfirmation: Bool?
 
+    /// - Note: the wire key is `coordinates`, not `location` — the
+    /// design doc's Dart-era naming didn't match what the backend
+    /// actually emits. Same 2026-08-03 bug as `requiresConfirmation`.
     enum CodingKeys: String, CodingKey {
-        case id, type, location, description, importance
+        case id, type, description, importance
+        case location = "coordinates"
         case triggerDistanceMeters = "trigger_distance_meters"
         case requiresConfirmation = "requires_confirmation"
     }

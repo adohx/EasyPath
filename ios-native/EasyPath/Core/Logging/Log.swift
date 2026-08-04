@@ -7,6 +7,7 @@ import OSLog
 enum Log {
     static let networking = Logger(subsystem: subsystem, category: "networking")
     static let navigation = Logger(subsystem: subsystem, category: "navigation")
+    static let location = Logger(subsystem: subsystem, category: "location")
     static let exploration = Logger(subsystem: subsystem, category: "exploration")
     static let personalPlaces = Logger(subsystem: subsystem, category: "personalPlaces")
     static let speech = Logger(subsystem: subsystem, category: "speech")
