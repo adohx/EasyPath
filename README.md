@@ -33,32 +33,34 @@ Riley wants a coffee near the Windsor Public Library, then wants to make sure th
 ## Architecture
 
 ```
-app/        Flutter client (iOS/Android/desktop) — voice-first UI,real-time navigation engine, local personal-places storage.
 backend/    FastAPI service — place search, route planning, nearby exploration. Proxies to:
             - MOTIS (self-hosted) for transit + walking routing
             - Overpass API for nearby-place / category queries
             - Nominatim for place search / geocoding
 ```
 
+The client is being rewritten as a native iOS/SwiftUI app for tighter
+VoiceOver integration. The previous Flutter client (iOS/Android/desktop,
+voice-first UI, real-time navigation engine, local personal-places
+storage) is preserved on the [`flutter-legacy`](../../tree/flutter-legacy)
+branch and still works against the same `backend/` API.
+
 ## Getting started
 
 ```bash
-# 1. Backend (FastAPI + MOTIS)
+# Backend (FastAPI + MOTIS)
 cd backend
 docker compose up -d
-
-# 2. Flutter app
-cd app
-flutter pub get
-flutter run
 ```
 
-Update `app/lib/config.dart`'s `kBackendBase` to point at the machine running the backend (its LAN IP, if testing on a physical device over Wi-Fi). MOTIS additionally needs an imported OSM/GTFS dataset under `backend/motis/data/` before route planning will return results.
+MOTIS needs an imported OSM/GTFS dataset under `backend/motis/data/`
+before route planning will return results. For the client, check out
+the `flutter-legacy` branch (see above) or watch this space for the
+new SwiftUI app.
 
 ## Testing
 
 ```bash
-cd app && flutter test
 cd backend/fastapi && pytest
 ```
 
