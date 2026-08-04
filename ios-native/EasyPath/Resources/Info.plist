@@ -37,6 +37,11 @@
 		<string>comgooglemaps-x-callback</string>
 		<string>moovit</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>EasyPath uses Bluetooth to detect indoor navigation beacons and Auracast audio broadcasts near you.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

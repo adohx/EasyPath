@@ -36,6 +36,17 @@ targets:
       properties:
         UILaunchScreen: {}
         BACKEND_BASE_URL: $(BACKEND_BASE_URL)
+        # DEV-ONLY: BACKEND_BASE_URL (Config.xcconfig) points at plain
+        # HTTP dev backends that move around (localhost, a LAN IP, or a
+        # bare-IP cloud host like the current Vultr box) — none of them
+        # have a TLS cert, and ATS blocks cleartext HTTP to anything but
+        # localhost by default, which is exactly the "Could not search
+        # for that destination" failure this was added to fix. Replace
+        # this with a scoped NSExceptionDomains entry (or just put the
+        # backend behind HTTPS) before any release/TestFlight build —
+        # this disables ATS for the whole app, not just the backend host.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         # Declares which external apps we may probe with canOpenURL/open
         # (Core/Handoff/AppHandoffService.swift). Apple Maps needs no
         # entry — it's a system app reachable via `maps://` unconditionally.
@@ -70,6 +81,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.easypath.app
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        # Your own Apple ID's team, from Config.xcconfig (gitignored) —
+        # keeps `xcodegen generate` from wiping the Team selection made
+        # in Xcode's Signing & Capabilities tab every time the project is
+        # regenerated. Leave DEVELOPMENT_TEAM unset in Config.xcconfig
+        # and you'll still need to pick a Team manually in Xcode once.
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
     dependencies: []
 
   EasyPathTests:

@@ -1,7 +1,62 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ → %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "%@ minutes" : {
 
+    },
+    "%@%% complete" : {
+
+    },
+    "Alert radius: %@m" : {
+
+    },
+    "Default" : {
+
+    },
+    "I Understand" : {
+
+    },
+    "Imperial" : {
+
+    },
+    "Metric" : {
+
+    },
+    "Navigation Assistance Only" : {
+
+    },
+    "Next: %@" : {
+
+    },
+    "Not yet implemented — see Features/CityExploration/README.md" : {
+
+    },
+    "Not yet implemented — see Features/IndoorNavigation/README.md" : {
+
+    },
+    "This application provides navigation assistance only. It does not guarantee that a route, street crossing, or nearby area is safe. Always use your own judgment and appropriate mobility tools." : {
+
+    }
   },
   "version" : "1.0"
 }

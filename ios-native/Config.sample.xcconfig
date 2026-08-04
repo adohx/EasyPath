@@ -2,6 +2,18 @@
 // at your own backend instance. See backend/docker-compose.yml for running
 // the FastAPI + MOTIS + Overpass stack locally.
 //
-// Xcconfig does not allow raw "//" in unescaped values, so the URL's
-// scheme separator is escaped as required by the format.
-BACKEND_BASE_URL = http:$()//localhost:8000
+// Xcconfig treats "//" anywhere in a line as the start of a comment —
+// even a "//" produced later by macro expansion doesn't help, because
+// comment-stripping happens on the raw line text before "$()" is
+// expanded. The fix is to put "$()" *between* the two slash characters
+// so the raw text never contains a literal "//" substring at all.
+BACKEND_BASE_URL = http:/$()/localhost:8000
+
+// Your Apple ID's Team ID (Xcode > Settings > Accounts > select your
+// Apple ID > "Team" column, or developer.apple.com > Account > Membership
+// details). Setting this here — instead of only picking a Team in
+// Xcode's Signing & Capabilities tab — means the choice survives
+// `xcodegen generate` regenerating the .xcodeproj from scratch, which
+// happens whenever a file is added/removed or project.yml changes. Leave
+// this blank to keep picking a Team manually in Xcode each time.
+DEVELOPMENT_TEAM =
